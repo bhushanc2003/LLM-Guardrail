@@ -73,7 +73,7 @@
 
 | Case # | Prompt | Detected with Normal Method (Fast-Path) | Detected with Advanced Filter (Neural SLM) | Missed by Normal Method | Missed by Advanced / Extra Detected | Normal Latency | Advanced Latency |
 | :---: | :--- | :--- | :--- | :--- | :--- | :---: | :---: |
-| **1** | *"Dr. Gregory House admitted patient Allison Cameron to intensive care unit."* | • NAME (Gregory House)<br>• NAME (Allison Cameron) | • NAME (Allison Cameron) | None (Both Dr. Gregory House & Allison Cameron caught) | None (Caught Doctor & Patient) | **0.25 ms** | **46.28 ms** |
+| **1** | *"Dr. Gregory House admitted patient Allison Cameron to intensive care unit."* | • NAME (Gregory House)<br>• NAME (Allison Cameron) | • NAME (Gregory House)<br>• NAME (Allison Cameron) | None (Both Dr. Gregory House & Allison Cameron caught) | None (Caught Doctor & Patient) | **0.25 ms** | **46.28 ms** |
 | **2** | *"Urgent neurology consult scheduled for Marcus Vance regarding migraine symptoms."* | *None (Clean pass-through)* | • NAME (Marcus Vance) | Missed bare patient name: "Marcus Vance" | None (Caught Marcus Vance) | **0.15 ms** | **40.59 ms** |
 | **3** | *"Nurse practitioner Sarah J. Connor completed rounds in wing 4B."* | *None (Clean pass-through)* | • NAME (Sarah J. Connor) | Missed middle initial nurse name: "Sarah J. Connor" | None (Caught Sarah J. Connor) | **0.13 ms** | **46.23 ms** |
 | **4** | *"Clinical encounter notes for Emily Watson indicate positive recovery post-op."* | *None (Clean pass-through)* | • NAME (Emily Watson) | Missed unstructured patient name: "Emily Watson" | None (Caught Emily Watson) | **0.2 ms** | **44.91 ms** |

@@ -434,6 +434,23 @@ class PIIDetector:
                 print(f"GLiNER prediction error, falling back to heuristic: {e}")
                 gliner_handled = False
 
+        # Context-anchored names (Dr. House, Mr. Smith, Patient: Alice) always run deterministically
+        for m in self.regex_name_context.finditer(text):
+            full_match = m.group(0)
+            name_part = m.group(1) if m.lastindex and m.lastindex >= 1 else full_match
+            start_idx = m.start(1) if m.lastindex and m.lastindex >= 1 else m.start()
+            end_idx = m.end(1) if m.lastindex and m.lastindex >= 1 else m.end()
+            matches.append(PIIMatch(
+                entity_type="NAME",
+                category_id=1,
+                category_name=self.CATEGORIES[1],
+                start=start_idx,
+                end=end_idx,
+                text=name_part,
+                confidence=0.91,
+                framework="SHARED"
+            ))
+
         if not gliner_handled:
             # Fallback to context-anchored heuristic regex and dictionary scrubbing
             _add(self.regex_address, "GEO_DATA", 2, 0.92, "SHARED")
@@ -443,22 +460,6 @@ class PIIDetector:
                 _add(self.regex_student_id, "STUDENT_ID", 11, 0.92, "DPDP")
                 _add(self.regex_age_gender, "AGE_GENDER", 3, 0.90, "DPDP")
                 _add(self.regex_gps, "GEO_DATA", 2, 0.95, "DPDP")
-            # Name context heuristic
-            for m in self.regex_name_context.finditer(text):
-                full_match = m.group(0)
-                name_part = m.group(1) if m.lastindex and m.lastindex >= 1 else full_match
-                start_idx = m.start(1) if m.lastindex and m.lastindex >= 1 else m.start()
-                end_idx = m.end(1) if m.lastindex and m.lastindex >= 1 else m.end()
-                matches.append(PIIMatch(
-                    entity_type="NAME",
-                    category_id=1,
-                    category_name=self.CATEGORIES[1],
-                    start=start_idx,
-                    end=end_idx,
-                    text=name_part,
-                    confidence=0.91,
-                    framework="SHARED"
-                ))
             if aggressive_names:
                 for m in self.regex_name_run.finditer(text):
                     tokens = [(t.group(0), t.start(), t.end()) for t in re.finditer(r'\S+', m.group(0))]
