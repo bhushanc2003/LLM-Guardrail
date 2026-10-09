@@ -1,5 +1,6 @@
 import time
 import json
+import math
 import os
 import uuid
 import httpx
@@ -756,11 +757,37 @@ async def admin_reset_rating(user_uuid: str, admin: DBUser = Depends(require_adm
         db.close()
 
 
+def get_finding_severity(entity_type: str) -> str:
+    """Returns 'critical', 'high', 'medium', or 'low' based on entity type."""
+    ent = (entity_type or "").upper()
+    if any(k in ent for k in [
+        "MRN", "HEALTH", "MEDICAL", "BIOMETRIC", "BANK", "ACCOUNT_NUMBER", "UPI", "FINANCIAL"
+    ]):
+        return "critical"
+    if any(k in ent for k in [
+        "SSN", "CREDIT_CARD", "PASSPORT", "AADHAAR", "PAN", "VOTER", "LICENSE", "DRIVING", "TAX_ID", "NATIONAL_ID"
+    ]):
+        return "high"
+    if any(k in ent for k in [
+        "EMAIL", "PHONE", "TELEPHONE", "FAX", "ADDRESS"
+    ]):
+        return "medium"
+    return "low"
+
+
+SEVERITY_PENALTIES = {
+    "low": 3.0,
+    "medium": 8.0,
+    "high": 15.0,
+    "critical": 25.0,
+}
+
+
 @app.get("/api/users/{user_uuid}/trust-analytics")
 async def get_user_trust_analytics(user_uuid: str, user: DBUser = Depends(get_current_user)):
     """
-    Per-user token tracking across all requests, authority-trust score,
-    violation frequency, and effective-use score.
+    Per-user token tracking across all requests, authority-trust score (exponential streak + severity penalties),
+    violation frequency time-series chart, and effective-use score (clean request ratio).
     """
     assert_owner_or_admin(user, user_uuid)
     db = SessionLocal()
@@ -774,6 +801,7 @@ async def get_user_trust_analytics(user_uuid: str, user: DBUser = Depends(get_cu
         since = target_user.rating_reset_at
         base = (
             db.query(
+                DBEvent.id,
                 DBEvent.decision,
                 DBEvent.kind,
                 DBEvent.action_mode,
@@ -794,61 +822,133 @@ async def get_user_trust_analytics(user_uuid: str, user: DBUser = Depends(get_cu
         completion_tokens = sum(e.completion_tokens or 0 for e in all_events)
         total_tokens = prompt_tokens + completion_tokens
 
-        # Ingress-only rule (team decision): a user is judged on what the USER sent. PII in model output
-        # (egress), in agent replies and in tool results is not a user violation. Denied tool calls count.
+        # Ingress-only rule: a user is judged on what the USER sent.
+        # PII in model output (egress), in agent replies, and in tool results is not a user violation.
+        # Denied tool calls count.
+        event_ids = [e.id for e in events if e.id]
+        findings_map: Dict[str, List[str]] = {}
+        if event_ids:
+            findings_rows = (
+                db.query(DBPIIFinding.event_id, DBPIIFinding.entity_type)
+                .filter(DBPIIFinding.event_id.in_(event_ids))
+                .all()
+            )
+            for eid, etype in findings_rows:
+                findings_map.setdefault(eid, []).append(etype)
+
         def user_input(e):
             return (e.kind or "prompt") == "prompt"
 
-        def violates(e):
-            return (user_input(e) and (e.pii_count or 0) > 0) or e.decision == "deny"
+        def classify_event(e):
+            is_prompt = user_input(e)
+            if is_prompt and (e.pii_count or 0) > 0:
+                ents = findings_map.get(e.id, [])
+                if e.decision == "block" or e.action_mode == "BLOCK":
+                    return "blocked", ents
+                elif e.action_mode == "HASH":
+                    return "hashed", ents
+                elif e.action_mode == "LOG_ONLY":
+                    return "logged", ents
+                else:
+                    return "redacted", ents
+            elif e.decision == "deny":
+                return "denied", []
+            else:
+                return "clean", []
 
         total_requests = len(events)
-        redacted_requests = sum(1 for e in events if user_input(e) and (e.pii_count or 0) > 0 and e.decision != "block")
-        blocked_requests = sum(1 for e in events if user_input(e) and (e.pii_count or 0) > 0 and e.decision == "block")
-        denied_requests = sum(1 for e in events if e.decision == "deny")
-        total_violations = redacted_requests + blocked_requests + denied_requests
-        clean_requests = total_requests - sum(1 for e in events if violates(e))
+        classifications = [classify_event(e) for e in events]
+        clean_requests = sum(1 for c, _ in classifications if c == "clean")
+        blocked_requests = sum(1 for c, _ in classifications if c == "blocked")
+        hashed_requests = sum(1 for c, _ in classifications if c == "hashed")
+        logged_requests = sum(1 for c, _ in classifications if c == "logged")
+        redacted_requests = sum(1 for c, _ in classifications if c == "redacted")
+        denied_requests = sum(1 for c, _ in classifications if c == "denied")
+        total_violations = blocked_requests + hashed_requests + logged_requests + redacted_requests + denied_requests
 
         # Output tokens of every request count; a clean request keeps its completion (output) tokens
         window_tokens = sum((e.prompt_tokens or 0) + (e.completion_tokens or 0) for e in events)
-        clean_tokens = sum((e.prompt_tokens or 0) + (e.completion_tokens or 0) for e in events if not violates(e))
+        clean_tokens = sum((e.prompt_tokens or 0) + (e.completion_tokens or 0) for e, (c, _) in zip(events, classifications) if c == "clean")
         violation_tokens = window_tokens - clean_tokens
 
         violation_frequency_pct = round((total_violations / total_requests) * 100, 2) if total_requests else 0.0
         compliance_rate = ((clean_requests / total_requests) * 100) if total_requests else 100.0
 
-        # Composite uses a smoothed, severity-weighted violation rate so one early event does not
-        # decide the rating: a redaction (guardrail handled it) counts half, a block or a denied tool
-        # call counts fully, and RATING_PRIOR_REQUESTS virtual clean requests are added to the history.
-        weighted_violations = 0.5 * redacted_requests + blocked_requests + denied_requests
-        smoothed_violation_pct = weighted_violations / (total_requests + RATING_PRIOR_REQUESTS) * 100
+        # 3. Effective-Use Score: Clean Requests / Total Requests * 100
+        # Clean = zero guardrail intervention (Total - Blocked - Redacted - Hashed - Logged - Denied)
+        effective_use_score = round((clean_requests / total_requests) * 100, 1) if total_requests > 0 else 100.0
 
-        # effective use: share of tokens spent on requests that finished clean (n/a when no token data)
-        effective_use_score = round(clean_tokens / window_tokens * 100, 1) if window_tokens > 0 else None
+        # 1. Authority-Trust Score: Streak-based exponential growth + severity-based penalties
+        # Base: 60 for admin, 50 for standard user
+        base_score = 60.0 if target_user.role == "admin" else 50.0
+        chrono_events = sorted(events, key=lambda ev: ev.created_at or datetime.min)
+        current_streak = 0
+        cumulative_penalties = 0.0
 
-        # authority trust: average over recent sessions of the weakest agent's authority score
-        session_scores = user_session_scores(db, target_user.id, since=since, limit=20)
-        authority_trust_score = round(
-            sum(s["min_score"] for s in session_scores) / len(session_scores), 1
-        ) if session_scores else 100.0
+        for ev in chrono_events:
+            cat, ents = classify_event(ev)
+            if cat == "clean":
+                current_streak += 1
+            else:
+                current_streak = 0
+                if ents:
+                    penalty = max(SEVERITY_PENALTIES[get_finding_severity(ent)] for ent in ents)
+                elif cat in ("denied", "blocked"):
+                    penalty = 15.0  # High severity
+                else:
+                    penalty = 8.0   # Medium severity default
+                cumulative_penalties += penalty
 
-        parts = [(0.4, authority_trust_score), (0.3, 100 - smoothed_violation_pct)]
-        if effective_use_score is not None:
-            parts.append((0.3, effective_use_score))
-        composite_rating = round(sum(w * v for w, v in parts) / sum(w for w, _ in parts), 1)
+        streak_bonus = 50.0 * (1.0 - math.exp(-current_streak / 25.0))
+        raw_authority_trust = base_score + streak_bonus - cumulative_penalties
+        authority_trust_score = round(max(0.0, min(100.0, raw_authority_trust)), 1)
 
-        if composite_rating >= 88:
-            trust_tier = "Tier 1: High Authority (Zero Risk)"
+        # Trust Tier Classification
+        if authority_trust_score >= 85.0:
+            trust_tier = "Tier 1: High Authority"
             trust_color = "#10b981"
-        elif composite_rating >= 70:
+        elif authority_trust_score >= 65.0:
             trust_tier = "Tier 2: Trusted Operator"
             trust_color = "#00f2fe"
-        elif composite_rating >= 50:
-            trust_tier = "Tier 3: Moderate Trust (Monitored)"
+        elif authority_trust_score >= 40.0:
+            trust_tier = "Tier 3: Moderate Trust"
             trust_color = "#f59e0b"
         else:
-            trust_tier = "Tier 4: Restricted (High Risk)"
-            trust_color = "#f43f5e"
+            trust_tier = "Tier 4: Restricted"
+            trust_color = "#fb7185"
+
+        # 2. Violation Frequency: Time-Series Daily Breakdown (last 30 days)
+        now = datetime.utcnow()
+        daily_map = {}
+        for i in range(29, -1, -1):
+            d_dt = now - timedelta(days=i)
+            d_str = d_dt.strftime("%Y-%m-%d")
+            daily_map[d_str] = {
+                "date": d_str,
+                "day": d_dt.strftime("%b %d"),
+                "redacted": 0,
+                "blocked": 0,
+                "hashed": 0,
+                "logged": 0,
+                "clean": 0,
+                "total": 0,
+            }
+
+        for ev in events:
+            if ev.created_at:
+                d_str = ev.created_at.strftime("%Y-%m-%d")
+                if d_str in daily_map:
+                    cat, _ = classify_event(ev)
+                    daily_map[d_str]["total"] += 1
+                    if cat in ("redacted", "blocked", "hashed", "logged"):
+                        daily_map[d_str][cat] += 1
+                    elif cat == "clean":
+                        daily_map[d_str]["clean"] += 1
+
+        violation_chart = list(daily_map.values())
+
+        session_scores = user_session_scores(db, target_user.id, since=since, limit=20)
+        composite_rating = authority_trust_score
 
         model_usage = {}
         for e in all_events:
@@ -875,14 +975,20 @@ async def get_user_trust_analytics(user_uuid: str, user: DBUser = Depends(get_cu
                 "clean_requests": clean_requests,
                 "redacted_requests": redacted_requests,
                 "blocked_requests": blocked_requests,
+                "hashed_requests": hashed_requests,
+                "logged_requests": logged_requests,
                 "total_violations": total_violations,
                 "denied_requests": denied_requests,
                 "violation_frequency_pct": violation_frequency_pct,
+                "violation_chart": violation_chart,
                 "compliance_rate_pct": round(compliance_rate, 2),
                 "effective_use_score": effective_use_score,
                 "authority_trust_score": authority_trust_score,
+                "current_streak": current_streak,
+                "streak_bonus": round(streak_bonus, 1),
+                "cumulative_penalties": round(cumulative_penalties, 1),
+                "base_score": base_score,
                 "composite_rating": composite_rating,
-                "smoothed_violation_pct": round(smoothed_violation_pct, 2),
                 "rating_since": since.isoformat() if since else None,
                 "recent_sessions": session_scores[:10],
                 "trust_tier": trust_tier,

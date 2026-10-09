@@ -28,7 +28,14 @@ def create_db_engine(url: str):
     # 1. Try standard psycopg2 if available and not explicitly using pg8000
     if not os.getenv("VERCEL") and "postgresql+pg8000://" not in url:
         try:
-            eng = sa.create_engine(url, pool_size=5, max_overflow=10, pool_recycle=240)
+            eng = sa.create_engine(
+                url,
+                pool_size=5,
+                max_overflow=10,
+                pool_recycle=240,
+                pool_pre_ping=True,
+                connect_args={"connect_timeout": 5}
+            )
             # Test connection
             with eng.connect() as conn:
                 conn.execute(sa.text("SELECT 1"))
@@ -185,24 +192,10 @@ class DBScoreLedger(Base):
 
 def init_db():
     """Create any missing tables. Existing v1 tables are left as they are."""
-    Base.metadata.create_all(bind=engine)
-    # create_all never alters existing tables, so add columns introduced after the first deploy
-    # (safe to run every start-up; IF NOT EXISTS makes each one a no-op once present).
-    added_columns = (
-        ("users", "rating_reset_at", "timestamptz"),
-        ("users", "hipaa_enabled", "boolean"),
-        ("users", "dpdp_enabled", "boolean"),
-        ("events", "original_response", "text"),
-        ("events", "anonymized_response", "text"),
-        ("events", "egress_pii_count", "integer DEFAULT 0"),
-        ("pii_findings", "direction", "text DEFAULT 'ingress'"),
-    )
-    for table, col, typ in added_columns:
-        try:
-            with engine.begin() as conn:
-                conn.execute(sa.text(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col} {typ}"))
-        except Exception as e:
-            print(f"column check skipped for {table}.{col}: {e}")
+    try:
+        Base.metadata.create_all(bind=engine)
+    except Exception as e:
+        print(f"Warning in create_all: {e}")
 
 
 def get_db_session():

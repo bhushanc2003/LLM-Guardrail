@@ -1070,7 +1070,7 @@ function Dashboard() {
       } catch (e) {
         if (!isCancelled) setMe(null);
       } finally {
-        if (!isCancelled) setPageReady(true);
+        setPageReady(true);
       }
     };
     load();
