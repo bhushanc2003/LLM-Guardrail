@@ -23,7 +23,7 @@ export default function Shell({ items, active, onNav, title, subtitle, userButto
       const next = !prev;
       try {
         localStorage.setItem('sidebar_collapsed', String(next));
-      } catch (_) {}
+      } catch (_) { }
       return next;
     });
   };
@@ -93,10 +93,10 @@ export default function Shell({ items, active, onNav, title, subtitle, userButto
                   WebkitTextFillColor: 'transparent',
                   letterSpacing: '0.02em',
                 }}>
-                  PII Guardrail
+                  Adrishya
                 </div>
                 <div style={{ color: C.muted, fontSize: '0.72rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', marginTop: '2px' }}>
-                  Zero-Trust Control
+                  Invisible Privacy Layer
                 </div>
               </div>
             )}
