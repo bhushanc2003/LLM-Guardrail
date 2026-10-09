@@ -1045,6 +1045,7 @@ export function OverviewUser({ authedFetch, me, onOpenEvent }) {
   const [mode, setMode] = useState(me.action_mode || '');
   const [hipaa, setHipaa] = useState(me.hipaa_enabled !== false);
   const [dpdp, setDpdp] = useState(me.dpdp_enabled !== false);
+  const [advancedFilter, setAdvancedFilter] = useState(me.advanced_filtering === true);
   const [saved, setSaved] = useState('');
   const [compSaved, setCompSaved] = useState('');
   const [activeModal, setActiveModal] = useState(null);
@@ -1062,6 +1063,7 @@ export function OverviewUser({ authedFetch, me, onOpenEvent }) {
         setMode(data.action_mode || '');
         if (data.hipaa_enabled !== undefined) setHipaa(data.hipaa_enabled);
         if (data.dpdp_enabled !== undefined) setDpdp(data.dpdp_enabled);
+        if (data.advanced_filtering !== undefined) setAdvancedFilter(data.advanced_filtering);
       }
     };
     syncMode();
@@ -1097,13 +1099,17 @@ export function OverviewUser({ authedFetch, me, onOpenEvent }) {
     setTimeout(() => setSaved(''), 2000);
   };
 
-  const saveCompliance = async (nextHipaa, nextDpdp) => {
-    setHipaa(nextHipaa);
-    setDpdp(nextDpdp);
+  const saveCompliance = async (nextHipaa, nextDpdp, nextAdv) => {
+    const hVal = nextHipaa !== undefined ? nextHipaa : hipaa;
+    const dVal = nextDpdp !== undefined ? nextDpdp : dpdp;
+    const aVal = nextAdv !== undefined ? nextAdv : advancedFilter;
+    setHipaa(hVal);
+    setDpdp(dVal);
+    setAdvancedFilter(aVal);
     const res = await authedFetch(`/api/users/${uuid}/compliance`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ hipaa_enabled: nextHipaa, dpdp_enabled: nextDpdp }),
+      body: JSON.stringify({ hipaa_enabled: hVal, dpdp_enabled: dVal, advanced_filtering: aVal }),
     });
     setCompSaved(res.ok ? 'Saved' : `Error (HTTP ${res.status})`);
     setTimeout(() => setCompSaved(''), 2000);
@@ -1154,17 +1160,17 @@ export function OverviewUser({ authedFetch, me, onOpenEvent }) {
           </Card>
 
           <Card
-            title="Compliance Frameworks"
+            title="Compliance Frameworks & Detection Mode"
             action={
-              <span style={{ color: compSaved ? C.allow : C.accent, fontSize: '0.82rem', fontWeight: 600 }}>
-                {compSaved || (hipaa && dpdp ? 'Active: HIPAA + DPDP' : hipaa ? 'Active: HIPAA only' : dpdp ? 'Active: DPDP only' : 'Pass-Through (No checks)')}
+              <span style={{ color: compSaved ? C.allow : (advancedFilter ? '#c084fc' : C.accent), fontSize: '0.82rem', fontWeight: 600 }}>
+                {compSaved || (advancedFilter ? '🧠 Neural GLiNER Mode' : '⚡ Fast-Path Mode')}
               </span>
             }
           >
             <div style={{ display: 'grid', gap: '10px' }}>
               <ToggleSwitch
                 checked={hipaa}
-                onChange={next => saveCompliance(next, dpdp)}
+                onChange={next => saveCompliance(next, dpdp, advancedFilter)}
                 label="HIPAA Compliance (US PHI)"
                 description="Enforces 15 Safe Harbor medical & patient identifiers (MRN, health plan, clinical dates, SSN...)"
                 icon="🏥"
@@ -1173,7 +1179,7 @@ export function OverviewUser({ authedFetch, me, onOpenEvent }) {
               />
               <ToggleSwitch
                 checked={dpdp}
-                onChange={next => saveCompliance(hipaa, next)}
+                onChange={next => saveCompliance(hipaa, next, advancedFilter)}
                 label="DPDP Compliance (India 2023)"
                 description="Enforces 27 Personal Identifiers (Aadhaar, PAN, UPI, Indian mobile, PIN, salary, employee ID...)"
                 icon="🇮🇳"
@@ -1181,6 +1187,55 @@ export function OverviewUser({ authedFetch, me, onOpenEvent }) {
                 onInfo={() => setActiveModal('dpdp')}
               />
             </div>
+
+            <div style={{ marginTop: '14px', paddingTop: '14px', borderTop: `1px solid ${C.border}`, display: 'grid', gap: '10px' }}>
+              <ToggleSwitch
+                checked={advancedFilter}
+                onChange={next => saveCompliance(hipaa, dpdp, next)}
+                label="Advanced Filtering (GLiNER 152M Neural Model)"
+                description="Zero-shot neural decision model to capture unstructured bare human names, natural addresses, and freeform salaries."
+                icon="🧠"
+                infoBadge={advancedFilter ? "Neural Active" : "Fast-Path Active"}
+              />
+
+              {advancedFilter ? (
+                <div style={{
+                  padding: '10px 14px',
+                  borderRadius: '8px',
+                  background: 'rgba(255, 170, 0, 0.09)',
+                  border: '1px solid rgba(255, 170, 0, 0.32)',
+                  color: '#ffaa00',
+                  fontSize: '0.80rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '10px',
+                  lineHeight: 1.45
+                }}>
+                  <span style={{ fontSize: '1.15rem', flex: 'none' }}>⚠️</span>
+                  <div>
+                    <strong>Latency Notice:</strong> Advanced filtering runs neural SLM inference (~50ms per prompt). Recommended when prompts contain unstructured human names without titles.
+                  </div>
+                </div>
+              ) : (
+                <div style={{
+                  padding: '8px 12px',
+                  borderRadius: '8px',
+                  background: 'rgba(0, 242, 254, 0.05)',
+                  border: '1px solid rgba(0, 242, 254, 0.18)',
+                  color: '#00f2fe',
+                  fontSize: '0.80rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px'
+                }}>
+                  <span style={{ flex: 'none' }}>⚡</span>
+                  <div>
+                    <strong>Fast-Path Mode Active:</strong> Sub-millisecond latency (&lt;0.5ms) using compiled regex grammars and mathematical checksums.
+                  </div>
+                </div>
+              )}
+            </div>
+
             <div style={{ color: C.faint, fontSize: '0.78rem', marginTop: '10px' }}>
               Toggle ON to inspect and protect against that compliance framework. When toggled OFF, those identifiers pass through unflagged.
             </div>

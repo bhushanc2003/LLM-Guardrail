@@ -75,6 +75,7 @@ class TestInspectRequest(BaseModel):
     user_id: Optional[str] = "user_demo"
     check_hipaa: Optional[bool] = None
     check_dpdp: Optional[bool] = None
+    advanced_filtering: Optional[bool] = None
     direction: Optional[str] = "ingress"
 
 class UserSyncRequest(BaseModel):
@@ -167,6 +168,7 @@ async def get_me(user: DBUser = Depends(get_current_user)):
         "action_mode": user.action_mode,
         "hipaa_enabled": user.hipaa_enabled if user.hipaa_enabled is not None else True,
         "dpdp_enabled": user.dpdp_enabled if user.dpdp_enabled is not None else True,
+        "advanced_filtering": getattr(user, "advanced_filtering", False) if getattr(user, "advanced_filtering", False) is not None else False,
     }
 
 def _sessions_summary(db, user_uuid: Optional[str] = None, limit: int = 50) -> List[Dict[str, Any]]:
@@ -415,10 +417,11 @@ async def set_user_action_mode(user_uuid: str, req: UserActionModeRequest, user:
 class UserComplianceRequest(BaseModel):
     hipaa_enabled: Optional[bool] = None
     dpdp_enabled: Optional[bool] = None
+    advanced_filtering: Optional[bool] = None
 
 @app.get("/api/users/{user_uuid}/compliance")
 async def get_user_compliance(user_uuid: str, user: DBUser = Depends(get_current_user)):
-    """Fetch active compliance frameworks (HIPAA / DPDP) for user."""
+    """Fetch active compliance frameworks (HIPAA / DPDP) and advanced filtering for user."""
     assert_owner_or_admin(user, user_uuid)
     db = SessionLocal()
     try:
@@ -429,18 +432,15 @@ async def get_user_compliance(user_uuid: str, user: DBUser = Depends(get_current
             "user_uuid": user_uuid,
             "hipaa_enabled": target.hipaa_enabled if target.hipaa_enabled is not None else True,
             "dpdp_enabled": target.dpdp_enabled if target.dpdp_enabled is not None else True,
+            "advanced_filtering": getattr(target, "advanced_filtering", False) if getattr(target, "advanced_filtering", False) is not None else False,
         }
     finally:
         db.close()
 
 @app.put("/api/users/{user_uuid}/compliance")
 async def set_user_compliance(user_uuid: str, req: UserComplianceRequest, user: DBUser = Depends(get_current_user)):
-    """Update active compliance frameworks (HIPAA / DPDP) for user. Admin only."""
-    if user.role != "admin":
-        raise HTTPException(
-            status_code=403,
-            detail="Admin only: Only administrators have authority to configure compliance policies."
-        )
+    """Update active compliance frameworks (HIPAA / DPDP) or advanced filtering for user."""
+    assert_owner_or_admin(user, user_uuid)
     db = SessionLocal()
     try:
         target = db.query(DBUser).filter(DBUser.user_uuid == user_uuid).first()
@@ -450,11 +450,14 @@ async def set_user_compliance(user_uuid: str, req: UserComplianceRequest, user: 
             target.hipaa_enabled = req.hipaa_enabled
         if req.dpdp_enabled is not None:
             target.dpdp_enabled = req.dpdp_enabled
+        if req.advanced_filtering is not None:
+            target.advanced_filtering = req.advanced_filtering
         db.commit()
         return {
             "user_uuid": user_uuid,
             "hipaa_enabled": target.hipaa_enabled if target.hipaa_enabled is not None else True,
             "dpdp_enabled": target.dpdp_enabled if target.dpdp_enabled is not None else True,
+            "advanced_filtering": getattr(target, "advanced_filtering", False) if getattr(target, "advanced_filtering", False) is not None else False,
         }
     finally:
         db.close()
@@ -1184,16 +1187,17 @@ async def test_inspect(req: TestInspectRequest, request: Request, user: DBUser =
     mode = req.mode if (req.mode and req.mode != "DEFAULT") else _action_mode_for(request, user.user_uuid)
     check_hipaa = req.check_hipaa if req.check_hipaa is not None else (user.hipaa_enabled if user.hipaa_enabled is not None else True)
     check_dpdp = req.check_dpdp if req.check_dpdp is not None else (user.dpdp_enabled if user.dpdp_enabled is not None else True)
+    use_gliner = req.advanced_filtering if req.advanced_filtering is not None else (getattr(user, "advanced_filtering", False) or False)
 
     is_egress = (req.direction or "").lower() == "egress"
     try:
         if is_egress:
             anon_text, matches = anonymizer.process_output(req.prompt, vault, mode=mode, check_hipaa=check_hipaa, check_dpdp=check_dpdp)
         else:
-            anon_text, matches = anonymizer.process_text(req.prompt, vault, mode=mode, check_hipaa=check_hipaa, check_dpdp=check_dpdp)
+            anon_text, matches = anonymizer.process_text(req.prompt, vault, mode=mode, check_hipaa=check_hipaa, check_dpdp=check_dpdp, use_gliner=use_gliner)
     except ValueError as e:
         latency_ms = (time.time() - start_time) * 1000.0
-        matches = detector.detect(req.prompt, check_hipaa=check_hipaa, check_dpdp=check_dpdp)
+        matches = detector.detect(req.prompt, check_hipaa=check_hipaa, check_dpdp=check_dpdp, use_gliner=use_gliner)
         block_event_id = audit_logger.log_event(
             identity=identity_from_request(request, user.user_uuid),
             user_id=req.user_id,
@@ -1423,10 +1427,11 @@ async def chat_completions(request: Request, user_uuid: Optional[str] = "default
     messages = req_body.get("messages", [])
     vault = PIISessionVault()
 
-    # Determine active compliance frameworks (HIPAA / DPDP)
+    # Determine active compliance frameworks (HIPAA / DPDP) and Advanced Filtering (GLiNER)
     db = SessionLocal()
     check_hipaa = True
     check_dpdp = True
+    use_gliner = False
     try:
         user_record = db.query(DBUser).filter(DBUser.user_uuid == user_uuid).first()
         if user_record:
@@ -1434,6 +1439,8 @@ async def chat_completions(request: Request, user_uuid: Optional[str] = "default
                 check_hipaa = user_record.hipaa_enabled
             if user_record.dpdp_enabled is not None:
                 check_dpdp = user_record.dpdp_enabled
+            if hasattr(user_record, "advanced_filtering") and user_record.advanced_filtering is not None:
+                use_gliner = user_record.advanced_filtering
     finally:
         db.close()
 
@@ -1441,6 +1448,8 @@ async def chat_completions(request: Request, user_uuid: Optional[str] = "default
         check_hipaa = request.headers.get("X-Check-HIPAA", "").lower() in ("true", "1", "yes")
     if "X-Check-DPDP" in request.headers:
         check_dpdp = request.headers.get("X-Check-DPDP", "").lower() in ("true", "1", "yes")
+    if "X-Advanced-Filtering" in request.headers:
+        use_gliner = request.headers.get("X-Advanced-Filtering", "").lower() in ("true", "1", "yes")
 
     # Apply PII Anonymization / Compliance Policy on prompt messages
     try:
@@ -1449,7 +1458,8 @@ async def chat_completions(request: Request, user_uuid: Optional[str] = "default
             vault=vault,
             mode=action_mode,
             check_hipaa=check_hipaa,
-            check_dpdp=check_dpdp
+            check_dpdp=check_dpdp,
+            use_gliner=use_gliner
         )
     except ValueError as e:
         latency_ms = (time.time() - start_time) * 1000.0

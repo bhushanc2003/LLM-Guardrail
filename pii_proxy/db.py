@@ -93,6 +93,7 @@ class DBUser(Base):
     action_mode = sa.Column(sa.Text, nullable=True, default="HASH")
     hipaa_enabled = sa.Column(sa.Boolean, nullable=True, default=True)
     dpdp_enabled = sa.Column(sa.Boolean, nullable=True, default=True)
+    advanced_filtering = sa.Column(sa.Boolean, nullable=True, default=False)  # Neural GLiNER 152M Model
     rating_reset_at = sa.Column(sa.DateTime(timezone=True), nullable=True)  # admin reset: rating counts only data after this
     created_at = sa.Column(sa.DateTime(timezone=True), default=datetime.utcnow)
 
@@ -201,6 +202,7 @@ def init_db():
         ("users", "rating_reset_at", "timestamptz"),
         ("users", "hipaa_enabled", "boolean"),
         ("users", "dpdp_enabled", "boolean"),
+        ("users", "advanced_filtering", "boolean DEFAULT FALSE"),
         ("events", "original_response", "text"),
         ("events", "anonymized_response", "text"),
         ("events", "egress_pii_count", "integer DEFAULT 0"),

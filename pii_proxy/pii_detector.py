@@ -289,7 +289,7 @@ class PIIDetector:
             Tamoxifen Ondansetron Metoprolol Lithium Quetiapine Lorazepam Biktarvy IGNORE Name Phone Number Address
         '''.split()}
 
-    def detect(self, text: str, check_hipaa: bool = True, check_dpdp: bool = True, aggressive_names: bool = False) -> List[PIIMatch]:
+    def detect(self, text: str, check_hipaa: bool = True, check_dpdp: bool = True, aggressive_names: bool = False, use_gliner: bool = False) -> List[PIIMatch]:
         """
         Detect PII entities in text based on active compliance frameworks (HIPAA / DPDP).
         If both are False, returns empty list (pass-through).
@@ -364,7 +364,7 @@ class PIIDetector:
         # Evaluates non-deterministic entities (Names, Addresses, Clinical Dates, Salaries)
         # ----------------------------------------------------
         gliner_handled = False
-        if self.gliner_model:
+        if use_gliner and self.gliner_model:
             try:
                 gliner_labels = [
                     "person", "patient", "doctor",

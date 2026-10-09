@@ -51,12 +51,13 @@ class PIIAnonymizer:
         mode: str = "REDACT",
         check_hipaa: bool = True,
         check_dpdp: bool = True,
-        aggressive_names: bool = False
+        aggressive_names: bool = False,
+        use_gliner: bool = False
     ) -> Tuple[str, List[PIIMatch]]:
         """
         Process text, replace detected PII based on mode, and return anonymized text + list of matches.
         """
-        matches = self.detector.detect(text, check_hipaa=check_hipaa, check_dpdp=check_dpdp, aggressive_names=aggressive_names)
+        matches = self.detector.detect(text, check_hipaa=check_hipaa, check_dpdp=check_dpdp, aggressive_names=aggressive_names, use_gliner=use_gliner)
         if not matches:
             return text, []
 
@@ -88,7 +89,8 @@ class PIIAnonymizer:
         vault: PIISessionVault,
         mode: str = "ANONYMIZE",
         check_hipaa: bool = True,
-        check_dpdp: bool = True
+        check_dpdp: bool = True,
+        use_gliner: bool = False
     ) -> Tuple[List[Dict[str, Any]], List[PIIMatch]]:
         """
         Process a list of OpenAI format messages (system, user, assistant).
@@ -101,7 +103,7 @@ class PIIAnonymizer:
             content = new_msg.get("content")
 
             if isinstance(content, str) and content:
-                anon_text, matches = self.process_text(content, vault, mode=mode, check_hipaa=check_hipaa, check_dpdp=check_dpdp)
+                anon_text, matches = self.process_text(content, vault, mode=mode, check_hipaa=check_hipaa, check_dpdp=check_dpdp, use_gliner=use_gliner)
                 new_msg["content"] = anon_text
                 all_matches.extend(matches)
             elif isinstance(content, list):
