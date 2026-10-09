@@ -135,6 +135,9 @@ class DBEvent(Base):
     tool_name = sa.Column(sa.Text, nullable=True)
     anonymized_text = sa.Column(sa.Text, nullable=True)
     original_text = sa.Column(sa.Text, nullable=True)
+    original_response = sa.Column(sa.Text, nullable=True)
+    anonymized_response = sa.Column(sa.Text, nullable=True)
+    egress_pii_count = sa.Column(sa.Integer, nullable=True, default=0)
     created_at = sa.Column(sa.DateTime(timezone=True), default=datetime.utcnow, index=True)
 
     session = relationship("DBSession", back_populates="events")
@@ -151,6 +154,7 @@ class DBPIIFinding(Base):
     placeholder = sa.Column(sa.Text, nullable=True)
     confidence = sa.Column(sa.Float, nullable=True)
     text_sha256 = sa.Column(sa.CHAR(64), nullable=False)
+    direction = sa.Column(sa.Text, nullable=True, default="ingress")
 
     event = relationship("DBEvent", back_populates="findings")
 

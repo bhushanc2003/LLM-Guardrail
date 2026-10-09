@@ -102,6 +102,7 @@ class AuditLogger:
                     placeholder=placeholder,
                     confidence=round(m.confidence, 3),
                     text_sha256=hashlib.sha256(m.text.encode()).hexdigest(),
+                    direction="ingress",
                 ))
 
             last = (
@@ -141,6 +142,54 @@ class AuditLogger:
         finally:
             db.close()
         return event_id
+
+    def log_egress_inspection(
+        self,
+        event_id: str,
+        original_response: str,
+        anonymized_response: str,
+        egress_matches: List[Any],
+        action_mode: str,
+        vault: Any = None,
+    ) -> None:
+        """Record model output inspection results, sanitization, and any egress compliance violations."""
+        if not event_id:
+            return
+        db = SessionLocal()
+        try:
+            event = db.query(DBEvent).filter(DBEvent.id == event_id).first()
+            if not event:
+                return
+
+            egress_count = len(egress_matches)
+            event.original_response = original_response or None
+            event.anonymized_response = anonymized_response if action_mode in ("REDACT", "HASH") else None
+            event.egress_pii_count = egress_count
+
+            if egress_count > 0:
+                event.pii_count = (event.pii_count or 0) + egress_count
+                if action_mode == "BLOCK":
+                    event.decision = "block"
+                elif action_mode in ("REDACT", "HASH") and event.decision != "block":
+                    event.decision = "redact"
+
+                for m in egress_matches:
+                    placeholder = vault.get_or_create_placeholder(m.text, m.entity_type) if vault else f"[{m.entity_type}]"
+                    db.add(DBPIIFinding(
+                        event_id=event.id,
+                        category_id=m.category_id,
+                        entity_type=m.entity_type,
+                        placeholder=placeholder,
+                        confidence=round(m.confidence, 3),
+                        text_sha256=hashlib.sha256(m.text.encode()).hexdigest(),
+                        direction="egress",
+                    ))
+            db.commit()
+        except Exception as e:
+            db.rollback()
+            print(f"Egress audit write failed: {e}")
+        finally:
+            db.close()
 
     def set_usage(self, event_id: str, prompt_tokens: Optional[int], completion_tokens: Optional[int], estimated: bool) -> None:
         db = SessionLocal()

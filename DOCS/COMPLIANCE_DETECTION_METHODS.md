@@ -162,3 +162,43 @@ When processing prompts via the UI sandbox (`/api/test-inspect`) or live proxy e
 | [ OFF ]        | [ OFF ]        | Pass-Through mode. Zero inspections; latency < 0.05ms.      |
 +----------------+----------------+-------------------------------------------------------------+
 ```
+
+---
+
+## 5. Bidirectional Inspection: Inbound Prompt (Ingress) vs. LLM Output (Egress)
+
+### Why LLM Output Inspection (Egress) Is Critical
+In enterprise and healthcare deployments, the LLM often receives sensitive internal context through:
+- **Retrieval-Augmented Generation (RAG)**: Internal vector stores containing confidential patient charts, employee compensation databases, or banking records.
+- **System Prompts & Memory**: Context injected by the host application that must remain internal.
+- **Model Fine-Tuning**: Memorized sensitive credentials, identifiers, or proprietary data.
+
+Even if the user's prompt is benign (e.g. *"Summarize our mutual customer files"*), the model might inadvertently leak confidential identifiers back to the user. The **Egress Guardrail** inspects the model's generated text before it leaves the proxy perimeter.
+
+```text
+┌────────────────┐      ┌─────────────────────────┐      ┌─────────────────┐
+│                │ ───► │  Ingress Guardrail      │ ───► │                 │
+│  User Prompt   │      │  (HIPAA / DPDP Check)   │      │  LLM / Model    │
+│                │ ◄─── │  Egress Guardrail       │ ◄─── │  (RAG / Memory) │
+└────────────────┘      └─────────────────────────┘      └─────────────────┘
+                         ▲
+                         │
+        [ Action Mode: BLOCK / REDACT / HASH / LOG_ONLY ]
+```
+
+### Egress Guardrail Enforcement Modes
+
+| Mode | Egress Action Behavior | Client Experience |
+|---|---|---|
+| **BLOCK** | The entire model response is intercepted and dropped immediately. Elevated to decision `block`. | Receives HTTP 400 error: `egress_compliance_violation` (`output_pii_blocked`). Zero sensitive tokens reach the client. |
+| **REDACT** | Sensitive entities detected in the model output are replaced with `[REDACTED_<ENTITY_TYPE>]` placeholders. | Receives sanitized text with all prohibited context redacted (e.g., `[REDACTED_PAN]`, `[REDACTED_AADHAAR]`). |
+| **HASH** | Sensitive entities are converted to deterministic cryptographic hashes (`[HASH:<token>]`). | Allows consistent tracking of anonymous entities without revealing real credentials. |
+| **LOG_ONLY** | Model output is delivered as-is; all identified violations are recorded in the audit trail. | Normal response; security administrators receive alerts on compliance violations. |
+
+### Audit & Telemetry Schema for Egress
+- **`events.original_response`**: Stores the raw LLM completion text before sanitization.
+- **`events.anonymized_response`**: Stores the sanitized output delivered to the end-user (or block message).
+- **`events.egress_pii_count`**: Number of compliance violations detected in the model's output.
+- **`pii_findings.direction`**: Categorizes each detected entity as either `ingress` (user prompt) or `egress` (LLM output).
+- **Dashboard & Activity Logs**: Renders separate badges (`↑ Egress (Model)` vs `↓ Ingress (Prompt)`) with dedicated side-by-side inspection cards for Raw Output vs Sanitized Delivered Response.
+

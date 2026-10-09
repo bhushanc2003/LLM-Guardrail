@@ -60,6 +60,7 @@ class TestInspectRequest(BaseModel):
     user_id: Optional[str] = "user_demo"
     check_hipaa: Optional[bool] = None
     check_dpdp: Optional[bool] = None
+    direction: Optional[str] = "ingress"
 
 class UserSyncRequest(BaseModel):
     clerk_user_id: str
@@ -407,7 +408,8 @@ def _event_row(e, findings, session_ext, agent_name, owner_uuid):
     if decision == "allow" and not findings:
         reason = "No PII found, sent as-is."
     elif decision == "block":
-        reason = f"Blocked: {e.pii_count} PII item(s) found ({', '.join(cats)}). Not sent to the model."
+        egress_note = " (intercepted on model output)" if getattr(e, "egress_pii_count", 0) and getattr(e, "egress_pii_count", 0) > 0 else ""
+        reason = f"Blocked by policy{egress_note}: {e.pii_count} PII item(s) found ({', '.join(cats)})."
     elif decision == "redact":
         reason = f"Redacted {e.pii_count} PII item(s): {', '.join(cats)}."
     return {
@@ -429,8 +431,17 @@ def _event_row(e, findings, session_ext, agent_name, owner_uuid):
         "tokens_estimated": e.tokens_estimated,
         "original_text": e.original_text,
         "anonymized_text": e.anonymized_text,
+        "original_response": getattr(e, "original_response", None),
+        "anonymized_response": getattr(e, "anonymized_response", None),
+        "egress_pii_count": getattr(e, "egress_pii_count", 0),
         "findings": [
-            {"entity_type": f.entity_type, "category": cat, "placeholder": f.placeholder, "confidence": f.confidence}
+            {
+                "entity_type": f.entity_type,
+                "category": cat,
+                "placeholder": f.placeholder,
+                "confidence": f.confidence,
+                "direction": getattr(f, "direction", "ingress") or "ingress"
+            }
             for f, cat, _ in findings
         ],
     }
@@ -819,40 +830,54 @@ async def test_inspect(req: TestInspectRequest, request: Request, user: DBUser =
     check_hipaa = req.check_hipaa if req.check_hipaa is not None else (user.hipaa_enabled if user.hipaa_enabled is not None else True)
     check_dpdp = req.check_dpdp if req.check_dpdp is not None else (user.dpdp_enabled if user.dpdp_enabled is not None else True)
 
+    is_egress = (req.direction or "").lower() == "egress"
     try:
-        anon_text, matches = anonymizer.process_text(req.prompt, vault, mode=mode, check_hipaa=check_hipaa, check_dpdp=check_dpdp)
+        if is_egress:
+            anon_text, matches = anonymizer.process_output(req.prompt, vault, mode=mode, check_hipaa=check_hipaa, check_dpdp=check_dpdp)
+        else:
+            anon_text, matches = anonymizer.process_text(req.prompt, vault, mode=mode, check_hipaa=check_hipaa, check_dpdp=check_dpdp)
     except ValueError as e:
         latency_ms = (time.time() - start_time) * 1000.0
-        # Detect matches for logging blocked attempt
         matches = detector.detect(req.prompt, check_hipaa=check_hipaa, check_dpdp=check_dpdp)
-        audit_logger.log_event(
+        block_event_id = audit_logger.log_event(
             identity=identity_from_request(request, user.user_uuid),
             user_id=req.user_id,
             user_uuid=user.user_uuid,
             request_id=f"block_{uuid.uuid4().hex[:8]}",
             action_mode="BLOCK",
-            matches=matches,
+            matches=matches if not is_egress else [],
             latency_ms=latency_ms,
             endpoint="/api/test-inspect",
-            original_prompt=req.prompt,
+            original_prompt=req.prompt if not is_egress else "[TEST_EGRESS_INPUT]",
             anonymized_prompt="[BLOCKED_POLICY_VIOLATION]",
             vault=vault
         )
+        if is_egress and block_event_id:
+            audit_logger.log_egress_inspection(
+                event_id=block_event_id,
+                original_response=req.prompt,
+                anonymized_response="[BLOCKED_POLICY_VIOLATION]",
+                egress_matches=matches,
+                action_mode="BLOCK",
+                vault=vault
+            )
         return JSONResponse(
             status_code=400,
             content={
                 "error": str(e),
                 "blocked": True,
+                "direction": req.direction or "ingress",
                 "action_mode": "BLOCK",
                 "original_prompt": req.prompt,
-                "anonymized_prompt": "🚫 REQUEST BLOCKED BY COMPLIANCE POLICY",
+                "anonymized_prompt": "🚫 MODEL OUTPUT BLOCKED BY COMPLIANCE POLICY" if is_egress else "🚫 REQUEST BLOCKED BY COMPLIANCE POLICY",
                 "matches": [
                     {
                         "category_id": m.category_id,
                         "category_name": m.category_name,
                         "entity_type": m.entity_type,
                         "confidence": round(m.confidence, 3),
-                        "text": m.text
+                        "text": m.text,
+                        "direction": "egress" if is_egress else "ingress"
                     }
                     for m in matches
                 ],
@@ -861,23 +886,33 @@ async def test_inspect(req: TestInspectRequest, request: Request, user: DBUser =
         )
 
     latency_ms = (time.time() - start_time) * 1000.0
-    audit_logger.log_event(
+    event_id = audit_logger.log_event(
         identity=identity_from_request(request, user.user_uuid),
         user_id=req.user_id,
         user_uuid=user.user_uuid,
         request_id=f"test_{uuid.uuid4().hex[:8]}",
         action_mode=mode,
-        matches=matches,
+        matches=matches if not is_egress else [],
         latency_ms=latency_ms,
         endpoint="/api/test-inspect",
-        original_prompt=req.prompt,
-        anonymized_prompt=anon_text,
+        original_prompt=req.prompt if not is_egress else "[TEST_EGRESS_PROMPT]",
+        anonymized_prompt=anon_text if not is_egress else "[TEST_EGRESS_PROMPT]",
         vault=vault
     )
+    if is_egress and event_id:
+        audit_logger.log_egress_inspection(
+            event_id=event_id,
+            original_response=req.prompt,
+            anonymized_response=anon_text,
+            egress_matches=matches,
+            action_mode=mode,
+            vault=vault
+        )
 
     return {
         "original_prompt": req.prompt,
         "anonymized_prompt": anon_text,
+        "direction": req.direction or "ingress",
         "action_mode": mode,
         "matches": [
             {
@@ -885,7 +920,8 @@ async def test_inspect(req: TestInspectRequest, request: Request, user: DBUser =
                 "category_name": m.category_name,
                 "entity_type": m.entity_type,
                 "confidence": round(m.confidence, 3),
-                "text": m.text
+                "text": m.text,
+                "direction": "egress" if is_egress else "ingress"
             }
             for m in matches
         ],
@@ -1219,6 +1255,17 @@ async def chat_completions(request: Request, user_uuid: Optional[str] = "default
             finally:
                 usage, completion_text = _tokens_from_sse("".join(raw_parts))
                 _record_usage(event_id, req_body.get("messages"), usage, completion_text)
+                if (check_hipaa or check_dpdp) and completion_text and event_id:
+                    out_matches = detector.detect(completion_text, check_hipaa=check_hipaa, check_dpdp=check_dpdp)
+                    sanitized_stream_text, _ = anonymizer.process_text(completion_text, vault, mode=action_mode, check_hipaa=check_hipaa, check_dpdp=check_dpdp)
+                    audit_logger.log_egress_inspection(
+                        event_id=event_id,
+                        original_response=completion_text,
+                        anonymized_response=sanitized_stream_text,
+                        egress_matches=out_matches,
+                        action_mode=action_mode,
+                        vault=vault
+                    )
                 await client.aclose()
 
         return StreamingResponse(stream_generator(), media_type="text/event-stream")
@@ -1249,6 +1296,60 @@ async def chat_completions(request: Request, user_uuid: Optional[str] = "default
                 (c.get("message") or {}).get("content") or "" for c in res_data.get("choices", []) if isinstance(c.get("message"), dict)
             )
             _record_usage(event_id, req_body.get("messages"), res_data.get("usage"), completion_text)
+
+            # Egress Compliance & Model Output Guardrail
+            egress_violations = []
+            blocked_egress = False
+            if check_hipaa or check_dpdp:
+                for choice in res_data.get("choices", []):
+                    msg = choice.get("message")
+                    if isinstance(msg, dict) and "content" in msg and isinstance(msg["content"], str) and msg["content"]:
+                        out_text = msg["content"]
+                        out_matches = detector.detect(out_text, check_hipaa=check_hipaa, check_dpdp=check_dpdp)
+                        if out_matches:
+                            egress_violations.extend(out_matches)
+                            if action_mode == "BLOCK":
+                                blocked_egress = True
+                                break
+                            elif action_mode in ("REDACT", "HASH"):
+                                sanitized_text, _ = anonymizer.process_output(
+                                    out_text,
+                                    vault,
+                                    mode=action_mode,
+                                    check_hipaa=check_hipaa,
+                                    check_dpdp=check_dpdp
+                                )
+                                msg["content"] = sanitized_text
+
+            sanitized_completion = "".join(
+                (c.get("message") or {}).get("content") or "" for c in res_data.get("choices", []) if isinstance(c.get("message"), dict)
+            )
+
+            if event_id:
+                audit_logger.log_egress_inspection(
+                    event_id=event_id,
+                    original_response=completion_text,
+                    anonymized_response=sanitized_completion,
+                    egress_matches=egress_violations,
+                    action_mode=action_mode,
+                    vault=vault
+                )
+
+            if blocked_egress:
+                categories_found = sorted(list(set(m.category_name for m in egress_violations)))
+                return JSONResponse(
+                    status_code=400,
+                    content={
+                        "error": {
+                            "message": f"Compliance Policy Violation (Egress): Model output blocked because it contained {len(egress_violations)} prohibited personal identifier(s) ({', '.join(categories_found)}).",
+                            "type": "egress_compliance_violation",
+                            "code": "output_pii_blocked",
+                            "matches_count": len(egress_violations),
+                            "categories": categories_found
+                        }
+                    }
+                )
+
             if config.DEANONYMIZE_OUTPUT and "choices" in res_data:
                 for choice in res_data.get("choices", []):
                     if "message" in choice and "content" in choice["message"]:
@@ -1276,19 +1377,37 @@ async def text_completions(request: Request, user_uuid: Optional[str] = "default
     user_id = req_body.get("user") or request.headers.get("X-User-ID") or user_uuid
     request_id = f"req_{uuid.uuid4().hex[:10]}"
 
+    db = SessionLocal()
+    check_hipaa = True
+    check_dpdp = True
+    try:
+        user_record = db.query(DBUser).filter(DBUser.user_uuid == user_uuid).first()
+        if user_record:
+            if user_record.hipaa_enabled is not None:
+                check_hipaa = user_record.hipaa_enabled
+            if user_record.dpdp_enabled is not None:
+                check_dpdp = user_record.dpdp_enabled
+    finally:
+        db.close()
+
+    if "X-Check-HIPAA" in request.headers:
+        check_hipaa = request.headers.get("X-Check-HIPAA", "").lower() in ("true", "1", "yes")
+    if "X-Check-DPDP" in request.headers:
+        check_dpdp = request.headers.get("X-Check-DPDP", "").lower() in ("true", "1", "yes")
+
     prompt = req_body.get("prompt", "")
     vault = PIISessionVault()
     all_matches = []
 
     if isinstance(prompt, str) and prompt:
-        anon_prompt, matches = anonymizer.process_text(prompt, vault, mode=action_mode)
+        anon_prompt, matches = anonymizer.process_text(prompt, vault, mode=action_mode, check_hipaa=check_hipaa, check_dpdp=check_dpdp)
         req_body["prompt"] = anon_prompt
         all_matches = matches
     elif isinstance(prompt, list):
         anon_prompts = []
         for p in prompt:
             if isinstance(p, str):
-                ap, m = anonymizer.process_text(p, vault, mode=action_mode)
+                ap, m = anonymizer.process_text(p, vault, mode=action_mode, check_hipaa=check_hipaa, check_dpdp=check_dpdp)
                 anon_prompts.append(ap)
                 all_matches.extend(m)
             else:
@@ -1304,7 +1423,7 @@ async def text_completions(request: Request, user_uuid: Optional[str] = "default
         headers["Authorization"] = auth_header
 
     latency_ms = (time.time() - start_time) * 1000.0
-    audit_logger.log_event(
+    event_id = audit_logger.log_event(
         identity=identity_from_request(request, user_uuid, [{"role": "user", "content": req_body.get("prompt")}]),
         user_id=user_id,
         user_uuid=user_uuid,
@@ -1341,6 +1460,46 @@ async def text_completions(request: Request, user_uuid: Optional[str] = "default
                 return JSONResponse(status_code=res.status_code, content=res.json())
 
             res_data = res.json()
+            egress_violations = []
+            blocked_egress = False
+            if check_hipaa or check_dpdp:
+                for choice in res_data.get("choices", []):
+                    if "text" in choice and isinstance(choice["text"], str) and choice["text"]:
+                        out_text = choice["text"]
+                        out_matches = detector.detect(out_text, check_hipaa=check_hipaa, check_dpdp=check_dpdp)
+                        if out_matches:
+                            egress_violations.extend(out_matches)
+                            if action_mode == "BLOCK":
+                                blocked_egress = True
+                                break
+                            elif action_mode in ("REDACT", "HASH"):
+                                sanitized_text, _ = anonymizer.process_output(out_text, vault, mode=action_mode, check_hipaa=check_hipaa, check_dpdp=check_dpdp)
+                                choice["text"] = sanitized_text
+
+            if event_id and egress_violations:
+                audit_logger.log_egress_inspection(
+                    event_id=event_id,
+                    original_response=str([c.get("text") for c in res_data.get("choices", [])]),
+                    anonymized_response=str([c.get("text") for c in res_data.get("choices", [])]),
+                    egress_matches=egress_violations,
+                    action_mode=action_mode,
+                    vault=vault
+                )
+
+            if blocked_egress:
+                categories_found = sorted(list(set(m.category_name for m in egress_violations)))
+                return JSONResponse(
+                    status_code=400,
+                    content={
+                        "error": {
+                            "message": f"Compliance Policy Violation (Egress): Model output blocked because it contained {len(egress_violations)} prohibited personal identifier(s) ({', '.join(categories_found)}).",
+                            "type": "egress_compliance_violation",
+                            "code": "output_pii_blocked",
+                            "categories": categories_found
+                        }
+                    }
+                )
+
             if config.DEANONYMIZE_OUTPUT and "choices" in res_data:
                 for choice in res_data.get("choices", []):
                     if "text" in choice and isinstance(choice["text"], str):

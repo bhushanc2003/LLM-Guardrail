@@ -121,3 +121,40 @@ class PIIAnonymizer:
             processed_messages.append(new_msg)
 
         return processed_messages, all_matches
+
+    def process_output(
+        self,
+        text: str,
+        vault: Optional[PIISessionVault] = None,
+        mode: str = "REDACT",
+        check_hipaa: bool = True,
+        check_dpdp: bool = True,
+    ) -> Tuple[str, List[PIIMatch]]:
+        """
+        Scan LLM output for HIPAA/DPDP compliance violations and apply mode (REDACT, HASH, BLOCK, LOG_ONLY).
+        Raises ValueError if mode == 'BLOCK' and compliance violations are found.
+        """
+        matches = self.detector.detect(text, check_hipaa=check_hipaa, check_dpdp=check_dpdp)
+        if not matches:
+            return text, []
+
+        if mode == "BLOCK" and len(matches) > 0:
+            raise ValueError(f"Compliance Policy Violation (Egress): LLM output contained {len(matches)} prohibited personal identifier(s).")
+
+        if mode == "LOG_ONLY":
+            return text, matches
+
+        result_chars = list(text)
+        sorted_matches = sorted(matches, key=lambda x: x.start, reverse=True)
+
+        for match in sorted_matches:
+            if mode == "HASH":
+                h = hashlib.sha256(match.text.encode()).hexdigest()[:8]
+                replacement = f"[HASH:{h}]"
+            else:
+                replacement = f"[REDACTED_{match.entity_type}]"
+
+            result_chars[match.start:match.end] = list(replacement)
+
+        anonymized_text = "".join(result_chars)
+        return anonymized_text, matches

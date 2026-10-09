@@ -965,9 +965,24 @@ export function OverviewAdmin({ authedFetch, onOpenEvent, onOpenUser }) {
 // ---------- Test ----------
 
 export function TestView({ authedFetch }) {
+  const [direction, setDirection] = useState('ingress');
+  const [mode, setMode] = useState('REDACT');
   const [prompt, setPrompt] = useState('Patient Saurabh Shisode (DOB: 04/12/1985), email saurabh@example.com, phone 555-123-4567, id 512592');
   const [result, setResult] = useState(null);
   const [busy, setBusy] = useState(false);
+
+  const sampleIngress = 'Patient Saurabh Shisode (DOB: 04/12/1985), email saurabh@example.com, phone 555-123-4567, id 512592';
+  const sampleEgress = 'Based on internal context, the patient Saurabh Shisode has Aadhaar 2345 6789 0123, PAN ABCDE1234F, UPI saurabh@okaxis, and annual salary package of 24 LPA.';
+
+  const handleDirectionChange = (nextDir) => {
+    setDirection(nextDir);
+    setResult(null);
+    if (nextDir === 'egress' && prompt === sampleIngress) {
+      setPrompt(sampleEgress);
+    } else if (nextDir === 'ingress' && prompt === sampleEgress) {
+      setPrompt(sampleIngress);
+    }
+  };
 
   const run = async () => {
     setBusy(true);
@@ -975,7 +990,7 @@ export function TestView({ authedFetch }) {
       const r = await authedFetch('/api/test-inspect', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt, mode: 'REDACT' }),
+        body: JSON.stringify({ prompt, mode, direction }),
       });
       setResult(await r.json());
     } finally {
@@ -984,38 +999,78 @@ export function TestView({ authedFetch }) {
   };
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: '18px', alignItems: 'start' }}>
-      <Card title="Prompt">
-        <textarea value={prompt} onChange={e => setPrompt(e.target.value)} style={{ ...inputStyle, width: '100%', height: '180px', boxSizing: 'border-box', fontFamily: mono, resize: 'vertical' }} />
-        <div style={{ marginTop: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <span style={{ color: C.faint, fontSize: '0.82rem' }}>Checked the same way as a live request. Saved to your activity.</span>
-          <button onClick={run} disabled={busy} style={btn}>{busy ? 'Checking…' : 'Check prompt'}</button>
+    <div style={{ display: 'grid', gap: '16px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '14px' }}>
+        <Segmented
+          value={direction}
+          onChange={handleDirectionChange}
+          options={[
+            ['ingress', '↓ Inbound Prompt (Ingress)'],
+            ['egress', '↑ LLM Output (Egress Guardrail)'],
+          ]}
+        />
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <span style={{ fontSize: '0.82rem', color: C.muted }}>Action Mode:</span>
+          <select value={mode} onChange={e => setMode(e.target.value)} style={inputStyle}>
+            <option value="REDACT">REDACT</option>
+            <option value="BLOCK">BLOCK</option>
+            <option value="HASH">HASH</option>
+            <option value="LOG_ONLY">LOG_ONLY</option>
+          </select>
         </div>
-      </Card>
-      <Card title="Result">
-        {!result ? <Empty>Run a check to see what would be found and what the model would receive.</Empty> : (
-          <>
-            <div style={{ fontFamily: mono, color: C.allow, whiteSpace: 'pre-wrap', fontSize: '0.92rem', lineHeight: 1.6, background: C.bg, border: `1px solid ${C.border}`, borderRadius: '8px', padding: '14px', minHeight: '90px' }}>
-              {result.anonymized_prompt || result.detail || 'No output'}
-            </div>
-            <div style={{ marginTop: '16px', color: C.muted, fontSize: '0.82rem', marginBottom: '8px' }}>{(result.matches || []).length} item(s) found</div>
-            {(result.matches || []).length > 0 && (
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                <thead><tr><th style={cellTh}>Type</th><th style={cellTh}>Category</th><th style={cellTh}>Found text</th></tr></thead>
-                <tbody>
-                  {result.matches.map((m, i) => (
-                    <tr key={i}>
-                      <td style={cellTd}>{m.entity_type}</td>
-                      <td style={cellTd}>{m.category_name}</td>
-                      <td style={{ ...cellTd, fontFamily: mono }}>{m.text}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </>
-        )}
-      </Card>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: '18px', alignItems: 'start' }}>
+        <Card title={direction === 'ingress' ? 'Inbound Prompt (User Input)' : 'Simulated Model Output (LLM Completion)'}>
+          <textarea value={prompt} onChange={e => setPrompt(e.target.value)} style={{ ...inputStyle, width: '100%', height: '180px', boxSizing: 'border-box', fontFamily: mono, resize: 'vertical' }} />
+          <div style={{ marginTop: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+            <span style={{ color: C.faint, fontSize: '0.82rem' }}>
+              {direction === 'ingress'
+                ? 'Inspected before forwarding to external GPU model node.'
+                : 'Inspected upon return to prevent sensitive data leakage to user.'}
+            </span>
+            <button onClick={run} disabled={busy} style={btn}>{busy ? 'Inspecting…' : `Check ${direction === 'ingress' ? 'prompt' : 'output'}`}</button>
+          </div>
+        </Card>
+        <Card title={direction === 'ingress' ? 'Payload Sent to Model' : 'Delivered Output (After Guardrails)'}>
+          {!result ? <Empty>Run an inspection to test compliance guardrails on {direction === 'ingress' ? 'input prompts' : 'model output'}.</Empty> : (
+            <>
+              <div style={{
+                fontFamily: mono,
+                color: result.blocked ? C.block : C.allow,
+                whiteSpace: 'pre-wrap',
+                fontSize: '0.92rem',
+                lineHeight: 1.6,
+                background: result.blocked ? 'rgba(244, 63, 94, 0.08)' : C.bg,
+                border: `1px solid ${result.blocked ? 'rgba(244, 63, 94, 0.4)' : C.border}`,
+                borderRadius: '8px',
+                padding: '14px',
+                minHeight: '90px'
+              }}>
+                {result.anonymized_prompt || result.error || 'No output'}
+              </div>
+              <div style={{ marginTop: '16px', color: C.muted, fontSize: '0.82rem', marginBottom: '8px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span>{(result.matches || []).length} violation(s) identified</span>
+                {result.latency_ms && <span style={{ color: '#38bdf8' }}>{result.latency_ms} ms</span>}
+              </div>
+              {(result.matches || []).length > 0 && (
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead><tr><th style={cellTh}>Type</th><th style={cellTh}>Category</th><th style={cellTh}>Found text</th></tr></thead>
+                  <tbody>
+                    {result.matches.map((m, i) => (
+                      <tr key={i}>
+                        <td style={{ ...cellTd, fontWeight: 600, color: '#f8fafc' }}>{m.entity_type}</td>
+                        <td style={cellTd}>{m.category_name}</td>
+                        <td style={{ ...cellTd, fontFamily: mono, color: C.accent }}>{m.text}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </>
+          )}
+        </Card>
+      </div>
     </div>
   );
 }

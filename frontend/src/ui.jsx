@@ -389,32 +389,62 @@ export function RequestDetail({ eventId, authedFetch, onBack }) {
         </div>
       )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: '20px', marginBottom: '24px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: '20px', marginBottom: '20px' }}>
         <div>
           <div style={label}>Original Prompt (Ingress)</div>
           <div style={box}>{e.original_text || <span style={{ color: C.faint }}>not stored</span>}</div>
         </div>
         <div>
           <div style={label}>Processed Payload (Upstream AI Model)</div>
-          <div style={{ ...box, color: C.allow, borderColor: e.decision === 'block' ? 'rgba(244, 63, 94, 0.4)' : 'rgba(16, 185, 129, 0.4)' }}>
-            {e.decision === 'block'
+          <div style={{ ...box, color: C.allow, borderColor: e.decision === 'block' && (!e.egress_pii_count) ? 'rgba(244, 63, 94, 0.4)' : 'rgba(16, 185, 129, 0.4)' }}>
+            {e.decision === 'block' && (!e.egress_pii_count)
               ? <span style={{ color: C.block, fontWeight: 700 }}>🚫 BLOCKED. Policy violation intercepted before reaching external nodes.</span>
               : (e.anonymized_text || e.original_text || <span style={{ color: C.faint }}>no change</span>)}
           </div>
         </div>
       </div>
 
+      {(e.original_response || e.anonymized_response) && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: '20px', marginBottom: '24px' }}>
+          <div>
+            <div style={label}>Model Raw Output (Egress)</div>
+            <div style={{ ...box, color: '#f8fafc' }}>{e.original_response}</div>
+          </div>
+          <div>
+            <div style={label}>Delivered Response (Sanitized)</div>
+            <div style={{ ...box, color: C.allow, borderColor: e.decision === 'block' && e.egress_pii_count ? 'rgba(244, 63, 94, 0.4)' : 'rgba(16, 185, 129, 0.4)' }}>
+              {e.decision === 'block' && e.egress_pii_count
+                ? <span style={{ color: C.block, fontWeight: 700 }}>🚫 BLOCKED. Model output policy violation intercepted from reaching user.</span>
+                : (e.anonymized_response || e.original_response || <span style={{ color: C.faint }}>no change</span>)}
+            </div>
+          </div>
+        </div>
+      )}
+
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: '20px' }}>
         <div>
           <div style={label}>Identified Sensitive PII Findings</div>
           {e.findings.length === 0 ? <Empty>No PII detected.</Empty> : (
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead><tr><th style={th}>Entity Type</th><th style={th}>Category</th><th style={th}>Compliance Action</th></tr></thead>
+              <thead><tr><th style={th}>Entity Type</th><th style={th}>Category</th><th style={th}>Direction</th><th style={th}>Compliance Action</th></tr></thead>
               <tbody>
                 {e.findings.map((f, i) => (
                   <tr key={i}>
                     <td style={{ ...td, fontWeight: 600, color: '#f8fafc' }}>{f.entity_type}</td>
                     <td style={td}>{f.category}</td>
+                    <td style={td}>
+                      <span style={{
+                        fontSize: '0.72rem',
+                        padding: '2px 7px',
+                        borderRadius: '4px',
+                        fontWeight: 600,
+                        background: f.direction === 'egress' ? 'rgba(168, 85, 247, 0.15)' : 'rgba(56, 189, 248, 0.15)',
+                        color: f.direction === 'egress' ? '#c084fc' : '#38bdf8',
+                        border: `1px solid ${f.direction === 'egress' ? 'rgba(168, 85, 247, 0.3)' : 'rgba(56, 189, 248, 0.3)'}`,
+                      }}>
+                        {f.direction === 'egress' ? '↑ Egress (Model)' : '↓ Ingress (Prompt)'}
+                      </span>
+                    </td>
                     <td style={{ ...td, fontFamily: mono, color: C.accent, fontWeight: 600 }}>{f.placeholder || '—'}</td>
                   </tr>
                 ))}
