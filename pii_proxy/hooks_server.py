@@ -1,7 +1,7 @@
 """
 GuardRailBench governance hooks (docs/HOOK_CONTRACT.md in the bench repo).
 
-Mounted into the main app (pii_proxy.main includes `router`), so these endpoints share port 8000
+Mounted into the main app (pii_proxy.main includes `router`), so these endpoints share port 8080
 with the proxy and dashboard.
 
 Design: the bench gives every hook a 2 s timeout and silently fails open, but our database is remote
@@ -51,7 +51,7 @@ BLOCK_MESSAGE = "[BLOCKED by governance: contains protected identifiers (HIPAA/D
 # memory and refreshed in the background, so a hook never waits on the database for this.
 # ANONYMIZE behaves as REDACT here: restoring real values would defeat the leak checks.
 _USER_MODES: Dict[str, str] = {}
-_USER_FRAMEWORKS: Dict[str, tuple] = {}   # user_uuid -> (hipaa_enabled, dpdp_enabled); dashboard toggles, default both on
+_USER_FRAMEWORKS: Dict[str, tuple] = {}   # user_uuid -> (hipaa_enabled, dpdp_enabled, advanced_filtering); dashboard toggles, default (on, on, off)
 
 
 SERVERLESS = bool(os.getenv("VERCEL"))   # no background threads there: the instance freezes after each response
@@ -64,11 +64,11 @@ def _refresh_user_modes_once() -> None:
     try:
         db = SessionLocal()
         try:
-            rows = db.query(DBUser.user_uuid, DBUser.action_mode, DBUser.hipaa_enabled, DBUser.dpdp_enabled).all()
+            rows = db.query(DBUser.user_uuid, DBUser.action_mode, DBUser.hipaa_enabled, DBUser.dpdp_enabled, DBUser.advanced_filtering).all()
             _USER_MODES.clear()
-            _USER_MODES.update({u: (m or "").upper() for u, m, _, _ in rows if m})
+            _USER_MODES.update({u: (m or "").upper() for u, m, _, _, _ in rows if m})
             _USER_FRAMEWORKS.clear()
-            _USER_FRAMEWORKS.update({u: (h is not False, d is not False) for u, _, h, d in rows if h is False or d is False})
+            _USER_FRAMEWORKS.update({u: (h is not False, d is not False, bool(a)) for u, _, h, d, a in rows if h is False or d is False or a})
         finally:
             db.close()
     except Exception as e:
@@ -86,11 +86,11 @@ def _refresh_user_modes() -> None:
         try:
             db = SessionLocal()
             try:
-                rows = db.query(DBUser.user_uuid, DBUser.action_mode, DBUser.hipaa_enabled, DBUser.dpdp_enabled).all()
+                rows = db.query(DBUser.user_uuid, DBUser.action_mode, DBUser.hipaa_enabled, DBUser.dpdp_enabled, DBUser.advanced_filtering).all()
                 _USER_MODES.clear()
-                _USER_MODES.update({u: (m or "").upper() for u, m, _, _ in rows if m})
+                _USER_MODES.update({u: (m or "").upper() for u, m, _, _, _ in rows if m})
                 _USER_FRAMEWORKS.clear()
-                _USER_FRAMEWORKS.update({u: (h is not False, d is not False) for u, _, h, d in rows if h is False or d is False})
+                _USER_FRAMEWORKS.update({u: (h is not False, d is not False, bool(a)) for u, _, h, d, a in rows if h is False or d is False or a})
             finally:
                 db.close()
         except Exception as e:
@@ -99,9 +99,9 @@ def _refresh_user_modes() -> None:
 
 
 def _frameworks_for(user_id: str) -> tuple:
-    """(check_hipaa, check_dpdp) from the user's dashboard toggles; both on unless switched off."""
+    """(check_hipaa, check_dpdp, use_gliner) from the user's dashboard toggles; packs on and neural filtering off unless changed."""
     _maybe_refresh()
-    return _USER_FRAMEWORKS.get(user_id, (True, True))
+    return _USER_FRAMEWORKS.get(user_id, (True, True, False))
 
 
 def _mode_for(user_id: str) -> str:
@@ -110,7 +110,21 @@ def _mode_for(user_id: str) -> str:
 
 
 # The hook contract sends tool_risk (low/medium/high) on every tool call.
-TOOL_RISK_THRESHOLDS = {"low": 20, "medium": 50, "high": 80}
+TOOL_RISK_THRESHOLDS = DEFAULT_POLICY["tool_risk_thresholds"]
+
+_EMAIL_DOMAIN = re.compile(r"@([A-Za-z0-9.-]+\.[A-Za-z]{2,})")
+
+
+def _external_recipient(tool_name: str, args_text: str) -> Optional[str]:
+    """For email tools: the first address whose domain is not on the allow-list, else None."""
+    if "email" not in tool_name.lower() and "mail" not in tool_name.lower():
+        return None
+    for dom in _EMAIL_DOMAIN.findall(args_text):
+        d = dom.lower()
+        if not any(d == a or d.endswith("." + a) for a in config.ALLOWED_EMAIL_DOMAINS):
+            return d
+    return None
+
 
 # Prompt-injection phrases (poisoned RAG chunks, tool results, hostile users). Matching lines are removed.
 INJECTION_PATTERNS = re.compile(
@@ -233,6 +247,7 @@ def _persist(job: Dict[str, Any]) -> None:
         endpoint=job["endpoint"], model="guardrailbench",
         original_prompt=job["original"], anonymized_prompt=job.get("clean"), vault=job.get("vault"),
         identity=ident, kind=job["kind"], tool_name=job.get("tool_name"), decision=job["decision"],
+        authority=job.get("authority"),
     )
     if event_id and job.get("usage"):
         audit_logger.set_usage(event_id, job["usage"][0], job["usage"][1], False)
@@ -339,7 +354,7 @@ class SessionEndIn(HookIdentity):
     summary: Dict[str, Any] = {}
 
 
-def _scan(text: str, st: _SessionState, mode: str = "REDACT", frameworks: tuple = (True, True)):
+def _scan(text: str, st: _SessionState, mode: str = "REDACT", frameworks: tuple = (True, True, False)):
     """
     Apply the action mode to text. Returns (clean_text, matches, vault).
       REDACT   -> [REDACTED_X]            HASH     -> [HASH:ab12cd34] (same value, same tag)
@@ -350,7 +365,8 @@ def _scan(text: str, st: _SessionState, mode: str = "REDACT", frameworks: tuple 
     vault = PIISessionVault()
     detect_mode = "HASH" if mode == "HASH" else ("LOG_ONLY" if mode == "LOG_ONLY" else "REDACT")
     clean, matches = anonymizer.process_text(text, vault, mode=detect_mode, aggressive_names=True,
-                                             check_hipaa=frameworks[0], check_dpdp=frameworks[1])
+                                             check_hipaa=frameworks[0], check_dpdp=frameworks[1],
+                                             use_gliner=len(frameworks) > 2 and frameworks[2])
     for m in matches:
         if m.entity_type == "NAME":
             for word in re.findall(r"[A-Za-z]{3,}", m.text):
@@ -406,7 +422,7 @@ def on_completion_received(body: CompletionIn):
     st = _session_state(body.session_id)
     mode = _mode_for(body.user_id)
     clean, matches, vault = _scan(body.completion, st, mode, _frameworks_for(body.user_id))
-    penalties, decision = [], _decision(mode, matches)
+    penalties, decision, evidence = [], _decision(mode, matches), None
     with st.lock:
         ag = _agent_state(st, body.agent_id, body.parent_agent_id)
         if matches:
@@ -415,7 +431,9 @@ def on_completion_received(body: CompletionIn):
             penalties.append((kind, f"PII in completion: {len(matches)} item(s)"))
         # Top-level agent output goes to the user: roll per-agent scores up into a verdict.
         if body.parent_agent_id is None:
-            ok, verdict = evaluate_verdict({a.name: a.score for a in st.agents.values()})
+            scores = {a.name: a.score for a in st.agents.values()}
+            ok, verdict = evaluate_verdict(scores)
+            evidence = {"rule": "session_verdict", "agent_scores": scores, "allowed": ok, "reason": verdict}
             if not ok:
                 clean, decision = verdict, "block"
         else:
@@ -425,8 +443,9 @@ def on_completion_received(body: CompletionIn):
                 clean = (f"output blocked: agent '{ag.name}' trust score degraded to {ag.score} < {floor}; "
                          f"its reply was not passed on")
                 decision = "block"
+                evidence = {"rule": "handoff_gate", "agent_score": ag.score, "floor": floor, "allowed": False}
     _enqueue(body, "/api/v1/on_completion_received", "completion", decision, body.completion,
-             matches=matches, clean=clean, vault=vault, penalties=penalties, mode=mode,
+             matches=matches, clean=clean, vault=vault, penalties=penalties, mode=mode, authority=evidence,
              latency_ms=float(body.latency_ms), usage=(body.prompt_tokens, body.completion_tokens))
     return {"completion": clean}
 
@@ -438,27 +457,44 @@ def on_tool_call(body: ToolCallIn):
     penalties = []
     with st.lock:
         ag = _agent_state(st, body.agent_id, body.parent_agent_id)
+        own, current = ag.score, _effective_score(st, ag)
+        threshold = TOOL_RISK_THRESHOLDS.get(body.tool_risk, 50)
+        # the evidence behind the decision, stored on the receipt: what score was held against what requirement
+        evidence = {"tool": body.tool_name, "risk": body.tool_risk, "own_score": own, "effective_score": current,
+                    "required_score": threshold, "in_allowed_tools": body.tool_name in body.agent_allowed_tools}
         if body.tool_name not in body.agent_allowed_tools:
-            _penalize(ag, "out_of_scope")
-            penalties.append(("out_of_scope", f"'{body.tool_name}' not in this agent's allowed tools"))
+            kind = f"out_of_scope_{body.tool_risk}" if body.tool_risk in TOOL_RISK_THRESHOLDS else "out_of_scope"
+            _penalize(ag, kind)
+            penalties.append((kind, f"'{body.tool_name}' ({body.tool_risk} risk) not in this agent's allowed tools"))
             allowed = False
+            evidence["rule"] = "out_of_scope"
         else:
-            threshold = TOOL_RISK_THRESHOLDS.get(body.tool_risk, 50)
-            current = _effective_score(st, ag)
             allowed = current >= threshold
+            evidence["rule"] = "score_threshold"
             if not allowed:
                 _penalize(ag, "denied_attempt")
                 penalties.append(("denied_attempt", f"{body.tool_name}: score {current} < required {threshold}"))
+            else:
+                ext = _external_recipient(body.tool_name, args_text)
+                if ext:
+                    allowed = False
+                    evidence["rule"] = "external_recipient"
+                    evidence["recipient_domain"] = ext
+                    _penalize(ag, "external_recipient")
+                    penalties.append(("external_recipient", f"{body.tool_name}: recipient domain '{ext}' is not allowed"))
     mode = _mode_for(body.user_id)
     clean_args, matches, _ = _scan(args_text, st, mode, _frameworks_for(body.user_id))
     if allowed and matches and mode == "BLOCK":
         # BLOCK mode: a tool call carrying protected identifiers does not run
         allowed = False
+        evidence["rule"] = "pii_in_arguments"
         with st.lock:
             _penalize(_agent_state(st, body.agent_id, body.parent_agent_id), "compliance_block")
         penalties.append(("compliance_block", f"{body.tool_name}: protected identifiers in arguments"))
+    evidence["outcome"] = "allow" if allowed else "deny"
     _enqueue(body, "/api/v1/on_tool_call", "tool_call", "allow" if allowed else "deny", args_text,
-             matches=matches, clean=clean_args, tool_name=body.tool_name, penalties=penalties, mode=mode)
+             matches=matches, clean=clean_args, tool_name=body.tool_name, penalties=penalties, mode=mode,
+             authority=evidence)
     return {"allow": allowed}
 
 

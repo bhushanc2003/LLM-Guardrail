@@ -47,6 +47,28 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+# One pooled client for every upstream model call. A client per request meant a fresh TCP + TLS handshake to the
+# model each time, which cost far more than all of our own processing.
+_UPSTREAM_CLIENT: Optional[httpx.AsyncClient] = None
+
+
+def _upstream_client() -> httpx.AsyncClient:
+    global _UPSTREAM_CLIENT
+    if _UPSTREAM_CLIENT is None or _UPSTREAM_CLIENT.is_closed:
+        _UPSTREAM_CLIENT = httpx.AsyncClient(timeout=180.0, limits=httpx.Limits(max_keepalive_connections=20, keepalive_expiry=60.0))
+    return _UPSTREAM_CLIENT
+
+
+class _SharedUpstream:
+    """`async with _SharedUpstream() as client:` hands out the pooled client and leaves it open."""
+    async def __aenter__(self) -> httpx.AsyncClient:
+        return _upstream_client()
+
+    async def __aexit__(self, *exc) -> bool:
+        return False
+
+
 @app.on_event("startup")
 def startup_event():
     """Ensure database tables exist in Neon PostgreSQL on startup."""
@@ -629,6 +651,17 @@ async def session_agents(session_id: str, user: DBUser = Depends(get_current_use
             if decision in ("redact", "block"):
                 c["violations"] += n
 
+        tool_rows: Dict[str, Dict[str, Dict[str, int]]] = {a.id: {} for a in agents}
+        for agent_id, tool, decision, n in (
+            db.query(DBEvent.agent_id, DBEvent.tool_name, DBEvent.decision, func.count(DBEvent.id))
+            .filter(DBEvent.session_id == session_id, DBEvent.kind == "tool_call", DBEvent.tool_name.isnot(None))
+            .group_by(DBEvent.agent_id, DBEvent.tool_name, DBEvent.decision)
+            .all()
+        ):
+            if agent_id in tool_rows:
+                t = tool_rows[agent_id].setdefault(tool, {"allowed": 0, "denied": 0})
+                t["denied" if decision == "deny" else "allowed"] += n
+
         by_agent: Dict[str, List[Any]] = {a.id: [] for a in agents}
         for l in ledger:
             by_agent[l.agent_id].append(l)
@@ -644,6 +677,7 @@ async def session_agents(session_id: str, user: DBUser = Depends(get_current_use
             own[a.id] = score
             out.append({"agent_id": a.id, "agent_name": a.agent_name, "parent_agent_id": a.parent_agent_id,
                         "score": score, "trend": trend,
+                        "tools": [{"tool": k, **v} for k, v in sorted(tool_rows[a.id].items())],
                         **{k: v for k, v in counts[a.id].items() if k != "real"}})
         by_id = {a.id: a for a in agents}
         for item in out:  # delegation cap: effective = min(own, parent's effective)
@@ -809,6 +843,20 @@ SEVERITY_PENALTIES = {
 }
 
 
+def _trust_step(classified, streak: int, penalties: float):
+    """One event of the authority-trust formula: a clean request extends the streak, anything else resets it and adds a severity penalty."""
+    cat, ents = classified
+    if cat == "clean":
+        return streak + 1, penalties
+    if ents:
+        penalty = max(SEVERITY_PENALTIES[get_finding_severity(ent)] for ent in ents)
+    elif cat in ("denied", "blocked"):
+        penalty = 15.0  # High severity
+    else:
+        penalty = 8.0   # Medium severity default
+    return 0, penalties + penalty
+
+
 @app.get("/api/users/{user_uuid}/trust-analytics")
 async def get_user_trust_analytics(user_uuid: str, user: DBUser = Depends(get_current_user)):
     """
@@ -912,18 +960,7 @@ async def get_user_trust_analytics(user_uuid: str, user: DBUser = Depends(get_cu
         cumulative_penalties = 0.0
 
         for ev in chrono_events:
-            cat, ents = classify_event(ev)
-            if cat == "clean":
-                current_streak += 1
-            else:
-                current_streak = 0
-                if ents:
-                    penalty = max(SEVERITY_PENALTIES[get_finding_severity(ent)] for ent in ents)
-                elif cat in ("denied", "blocked"):
-                    penalty = 15.0  # High severity
-                else:
-                    penalty = 8.0   # Medium severity default
-                cumulative_penalties += penalty
+            current_streak, cumulative_penalties = _trust_step(classify_event(ev), current_streak, cumulative_penalties)
 
         max_bonus = 100.0 - base_score  # 20.0 bonus points up to 100.0
         streak_bonus = max_bonus * (1.0 - math.exp(-current_streak / 25.0))
@@ -974,6 +1011,44 @@ async def get_user_trust_analytics(user_uuid: str, user: DBUser = Depends(get_cu
 
         violation_chart = list(daily_map.values())
 
+        # Token usage per day (all requests, not only the rating window)
+        token_map = {d: 0 for d in daily_map}
+        for ev in all_events:
+            if ev.created_at:
+                d_str = ev.created_at.strftime("%Y-%m-%d")
+                if d_str in token_map:
+                    token_map[d_str] += (ev.prompt_tokens or 0) + (ev.completion_tokens or 0)
+        usage_chart = [{"date": d, "day": daily_map[d]["day"], "tokens": t} for d, t in token_map.items()]
+
+        # Rating trend: the same trust formula, replayed event by event and sampled at the end of each day
+        by_day: Dict[str, list] = {}
+        for ev in chrono_events:
+            if ev.created_at:
+                by_day.setdefault(ev.created_at.strftime("%Y-%m-%d"), []).append(ev)
+        rating_trend, run_streak, run_pen = [], 0, 0.0
+        before = [d for d in sorted(by_day) if d < next(iter(daily_map))]
+        for d in before:     # events older than the 30-day window still shape the running score
+            for ev in by_day[d]:
+                run_streak, run_pen = _trust_step(classify_event(ev), run_streak, run_pen)
+        for d in daily_map:
+            for ev in by_day.get(d, []):
+                run_streak, run_pen = _trust_step(classify_event(ev), run_streak, run_pen)
+            raw = base_score + max_bonus * (1.0 - math.exp(-run_streak / 25.0)) - run_pen
+            rating_trend.append({"date": d, "day": daily_map[d]["day"], "rating": round(max(0.0, min(100.0, raw)), 1)})
+
+        # Violation history: the most recent non-clean events
+        violation_history = []
+        for ev, (cat, ents) in sorted(zip(events, classifications), key=lambda x: x[0].created_at or datetime.min, reverse=True):
+            if cat != "clean":
+                violation_history.append({
+                    "when": ev.created_at.isoformat() if ev.created_at else None,
+                    "category": cat,
+                    "entities": sorted(set(ents)),
+                    "tokens": (ev.prompt_tokens or 0) + (ev.completion_tokens or 0),
+                })
+                if len(violation_history) >= 10:
+                    break
+
         session_scores = user_session_scores(db, target_user.id, since=since, limit=20)
         composite_rating = authority_trust_score
 
@@ -1008,6 +1083,9 @@ async def get_user_trust_analytics(user_uuid: str, user: DBUser = Depends(get_cu
                 "denied_requests": denied_requests,
                 "violation_frequency_pct": violation_frequency_pct,
                 "violation_chart": violation_chart,
+                "usage_chart": usage_chart,
+                "rating_trend": rating_trend,
+                "violation_history": violation_history,
                 "compliance_rate_pct": round(compliance_rate, 2),
                 "effective_use_score": effective_use_score,
                 "authority_trust_score": authority_trust_score,
@@ -1572,7 +1650,7 @@ async def chat_completions(request: Request, user_uuid: Optional[str] = "default
 
     if is_stream:
         async def stream_generator():
-            client = httpx.AsyncClient(timeout=180.0)
+            client = _upstream_client()
             raw_parts = []
             try:
                 async with client.stream("POST", upstream_url, json=req_body, headers=headers) as response:
@@ -1647,11 +1725,11 @@ async def chat_completions(request: Request, user_uuid: Optional[str] = "default
                         action_mode=action_mode,
                         vault=vault
                     )
-                await client.aclose()
+                pass  # the pooled client stays open
 
         return StreamingResponse(stream_generator(), media_type="text/event-stream")
     else:
-        async with httpx.AsyncClient(timeout=120.0) as client:
+        async with _SharedUpstream() as client:
             try:
                 res = await client.post(upstream_url, json=req_body, headers=headers)
             except Exception as conn_err:
@@ -1823,7 +1901,7 @@ async def text_completions(request: Request, user_uuid: Optional[str] = "default
 
     if is_stream:
         async def stream_generator():
-            client = httpx.AsyncClient(timeout=180.0)
+            client = _upstream_client()
             try:
                 async with client.stream("POST", upstream_url, json=req_body, headers=headers) as response:
                     async for chunk in response.aiter_text():
@@ -1831,11 +1909,11 @@ async def text_completions(request: Request, user_uuid: Optional[str] = "default
                             chunk = vault.de_anonymize(chunk)
                         yield chunk
             finally:
-                await client.aclose()
+                pass  # the pooled client stays open
 
         return StreamingResponse(stream_generator(), media_type="text/event-stream")
     else:
-        async with httpx.AsyncClient(timeout=120.0) as client:
+        async with _SharedUpstream() as client:
             res = await client.post(upstream_url, json=req_body, headers=headers)
             if res.status_code != 200:
                 return JSONResponse(status_code=res.status_code, content=res.json())
@@ -1912,7 +1990,7 @@ async def embeddings(request: Request, user_uuid: Optional[str] = "default_user"
         req_body["model"] = config.EMBEDDING_MODEL_ID
 
     upstream_url = f"{config.UPSTREAM_BASE_URL.rstrip('/')}/embeddings"
-    async with httpx.AsyncClient(timeout=60.0) as client:
+    async with _SharedUpstream() as client:
         res = await client.post(upstream_url, json=req_body, headers=headers)
         return JSONResponse(status_code=res.status_code, content=res.json())
 

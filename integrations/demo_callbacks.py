@@ -8,17 +8,17 @@ Scenario (not from the GuardRailBench): an Indian bank's back office, so the dat
   Demo B  LangGraph loan desk with three agents:
             orchestrator   (real model)  plans and writes the final summary
             kyc_agent      (real model)  calls `get_customer_profile` (returns Aadhaar / PAN / phone)
-            payout_agent   (scripted)    is ALLOWED to call `transfer_funds`, but first reads two beneficiary notes that carry
-                                         prompt-injection text. Its authority score drops (100 -> 60), so `transfer_funds`
-                                         (high risk, needs 80) is then DENIED even though it is in the agent's declared tools.
+            payout_agent   (scripted)    is ALLOWED to call `transfer_funds`, but first reads three beneficiary notes that carry
+                                         prompt-injection text. Its authority score drops (100 -> 55), so `transfer_funds`
+                                         (high risk, needs 60) is then DENIED even though it is in the agent's declared tools.
           That is earned authority: permission depends on the live score, not only on a static allow-list.
 
 The agents call a REAL model (any OpenAI-compatible endpoint); see integrations/llm_config.py for how the model settings are found
 (flags --llm-base-url / --llm-model / --llm-api-key, then DEMO_LLM_* in env or .env, then the GuardRailBench .env). Keys are never printed.
-The governance server must be running (default http://localhost:8000).
+The governance server must be running (default http://localhost:8080).
 
     python integrations/demo_callbacks.py
-    python integrations/demo_callbacks.py --user my-demo --base http://localhost:8000
+    python integrations/demo_callbacks.py --user my-demo --base http://localhost:8080
 """
 import argparse
 import logging
@@ -146,8 +146,9 @@ def build_graph(cfg: Dict[str, str]):
         return {"notes": ["kyc_agent: " + str(reply.content)[:160]]}
 
     def payout_agent(state: State, config: RunnableConfig):
-        # Scripted so the demo is repeatable: two poisoned notes lower this agent's score, then it tries the payout.
+        # Scripted so the demo is repeatable: three poisoned notes (-15 each) lower this agent's score, then it tries the payout.
         out = [call_tool("get_beneficiary_note", {"beneficiary_id": "B-77"}, config),
+               call_tool("get_beneficiary_note", {"beneficiary_id": "B-77"}, config),
                call_tool("get_beneficiary_note", {"beneficiary_id": "B-77"}, config),
                call_tool("transfer_funds", {"to_account": "ACME-0001", "amount": "INR 25,000"}, config)]
         return {"notes": ["payout_agent: " + " | ".join(o[:70] for o in out)]}
@@ -184,7 +185,7 @@ def demo_langgraph(base: str, user: str, cfg: Dict[str, str]) -> GuardrailCallba
     handler.finish("orchestrator")
     show("B. LangGraph loan desk (callbacks)", handler)
     print(f"  final answer the user sees: {result['answer']!r}")
-    print("  note: payout_agent's transfer_funds was in its allowed list; it was denied because two injected notes cut its score to 60 (< 80 needed).")
+    print("  note: payout_agent's transfer_funds was in its allowed list; it was denied because three injected notes cut its score to 55 (< 60 needed).")
     return handler
 
 
@@ -192,7 +193,7 @@ def main() -> None:
     # LangChain logs every exception raised from a callback; the denials below are intentional, so keep the output readable
     logging.getLogger("langchain_core.callbacks.manager").setLevel(logging.CRITICAL)
     ap = argparse.ArgumentParser()
-    ap.add_argument("--base", default="http://localhost:8000", help="governance server")
+    ap.add_argument("--base", default="http://localhost:8080", help="governance server")
     ap.add_argument("--user", default="demo-callbacks")
     ap.add_argument("--llm-base-url")
     ap.add_argument("--llm-model")

@@ -147,6 +147,7 @@ class DBEvent(Base):
     original_response = sa.Column(sa.Text, nullable=True)
     anonymized_response = sa.Column(sa.Text, nullable=True)
     egress_pii_count = sa.Column(sa.Integer, nullable=True, default=0)
+    authority = sa.Column(sa.Text, nullable=True)   # JSON: the authority evidence behind this decision (score, required threshold, rule)
     created_at = sa.Column(sa.DateTime(timezone=True), default=datetime.utcnow, index=True)
 
     session = relationship("DBSession", back_populates="events")
@@ -206,6 +207,7 @@ def init_db():
         ("events", "original_response", "text"),
         ("events", "anonymized_response", "text"),
         ("events", "egress_pii_count", "integer DEFAULT 0"),
+        ("events", "authority", "text"),
         ("pii_findings", "direction", "text DEFAULT 'ingress'"),
     )
     if engine.dialect.name != "postgresql":

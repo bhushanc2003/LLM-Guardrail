@@ -4,14 +4,14 @@ Latency / overhead benchmark for the governance runtime (problem statement objec
 
 Three measurements, all printed and saved to reports/latency_<timestamp>.md:
 
-  A. Detector alone, in-process: regex only vs regex + Presidio NER, for 0.2 / 1 / 4 KB of text.
+  A. Detector alone, in-process: regex only vs regex + GLiNER, for 0.2 / 1 / 4 KB of text.
   B. The five hooks over HTTP against the running server (what the GuardRailBench actually waits for),
      reported as p50 / p95 / p99 in ms, next to a no-op round trip (GET /api/v1/hooks_status) so you can
      see how much is HTTP and how much is governance. The hooks must answer inside the bench's 2 s limit.
-  C. (optional, --upstream) the same chat request sent straight to the model and through our proxy, to show
+  C. (optional, --upstream; set UPSTREAM_API_KEY) the same chat request sent straight to the model and through our proxy, to show
      the proxy's added latency per LLM call. Model time varies, so the overhead is the median difference.
 
-Usage (server on :8000 running; venv active):
+Usage (server on :8080 running; venv active):
     python scripts/latency_benchmark.py
     python scripts/latency_benchmark.py --n 200 --upstream
     python scripts/latency_benchmark.py --base https://<your-vercel-app>   # or set BENCH_BASE in .env
@@ -51,20 +51,20 @@ def detector_bench(runs=30):
     """A. in-process detector timing, regex vs NER."""
     from pii_proxy.pii_detector import PIIDetector
     out = []
-    for label, flag in (("regex only", "false"), ("regex + Presidio NER", "true")):
-        os.environ["ENABLE_PRESIDIO"] = flag
-        d = PIIDetector()
-        if flag == "true" and d.presidio_analyzer is None:
+    os.environ.setdefault("ENABLE_GLINER", "true")
+    d = PIIDetector()
+    for label, use in (("regex only", False), ("regex + GLiNER (advanced filtering)", True)):
+        if use and d.gliner_model is None:
             out.append((label, None))
             continue
         row = {}
         for size in (200, 1000, 4000):
             text = (PII_TEXT * 40)[:size]
-            d.detect(text, aggressive_names=True)  # warm up
+            d.detect(text, aggressive_names=True, use_gliner=use)  # warm up
             ms = []
             for _ in range(runs):
                 t = time.perf_counter()
-                d.detect(text, aggressive_names=True)
+                d.detect(text, aggressive_names=True, use_gliner=use)
                 ms.append((time.perf_counter() - t) * 1000)
             row[size] = stats_row(ms)
         out.append((label, row))
@@ -111,7 +111,9 @@ def upstream_bench(base, upstream, model, runs):
     """C. direct model call vs through the proxy."""
     body = {"model": model, "max_tokens": 8, "temperature": 0, "messages": [{"role": "user", "content": "Reply with the single word: ok"}]}
     direct, proxied = [], []
-    with httpx.Client(timeout=120) as c:
+    key = os.getenv("UPSTREAM_API_KEY")   # the proxy forwards the caller's Authorization header to the model
+    auth = {"Authorization": f"Bearer {key}"} if key else {}
+    with httpx.Client(timeout=120, headers=auth) as c:
         for i in range(runs + 1):
             t = time.perf_counter()
             r1 = c.post(f"{upstream}/chat/completions", json=body)
@@ -132,7 +134,7 @@ def upstream_bench(base, upstream, model, runs):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--base", default=os.getenv("BENCH_BASE", "http://localhost:8000"))
+    ap.add_argument("--base", default=os.getenv("BENCH_BASE", "http://localhost:8080"))
     ap.add_argument("--n", type=int, default=100, help="requests per hook")
     ap.add_argument("--upstream", action="store_true", help="also compare direct model call vs proxy")
     ap.add_argument("--upstream-url", default=os.getenv("UPSTREAM_BASE_URL", "https://ai-gpu-node.tailfa114b.ts.net/api/v1"))
@@ -165,6 +167,16 @@ def main():
     lines.append("")
     lines.append(f"Governance cost above a bare HTTP round trip (p50): " + ", ".join(
         f"{n.split(' (')[0]} +{f(r['p50'] - base_p50)} ms" for n, r in rows.items() if not n.startswith("no-op")))
+    # Headline numbers: what governance adds to one LLM call (prompt hook + completion hook) and to one tool call
+    # (gate + result hook), measured as time above a bare HTTP round trip so the "without governance" side is the same call minus our work.
+    def added(*names):
+        return sum(rows[n]["p50"] - base_p50 for n in names)
+    llm_add = added("on_prompt_received (1 KB, PII)", "on_completion_received (300 chars, PII)")
+    tool_add = added("on_tool_call (allowed)", "on_tool_result (500 chars, PII)")
+    lines += ["", "### Overhead summary (p50, hooks only; add the network hop if the server is remote)", "",
+              "| Unit of work | Governance adds |", "|---|---|",
+              f"| one LLM call (prompt + completion hooks) | {f(llm_add)} ms |",
+              f"| one tool call (tool-call gate + tool-result hook) | {f(tool_add)} ms |"]
     worst = max(r["max"] for r in rows.values())
     lines.append(f"\nSlowest single call: {f(worst)} ms ({'inside' if worst < 2000 else 'OVER'} the 2000 ms hook limit).")
 

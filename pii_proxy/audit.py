@@ -19,11 +19,15 @@ def _sha(text: Optional[str]) -> str:
 def receipt_payload(version: int, event_id: str, session_id: str, seq: int, kind: str, decision: Optional[str],
                     action_mode: str, pii_count: int, prev_hash: str,
                     agent_id: Optional[str] = None, original_text: Optional[str] = None,
-                    anonymized_text: Optional[str] = None) -> str:
+                    anonymized_text: Optional[str] = None, user_id: Optional[str] = None,
+                    parent_agent_id: Optional[str] = None, authority: Optional[str] = None,
+                    entities: Optional[List[str]] = None) -> str:
     """
     The exact string a receipt hash covers. v1 (older rows) covered the decision metadata only.
     v2 also covers the agent and a hash of the stored original / processed text, so editing the
     recorded prompt or re-attributing the event to another agent breaks the chain too.
+    v3 adds the rest of the attribution chain (user, parent agent), the authority evidence behind the decision
+    (score, required threshold, rule) and the detected entity types, so none of those can be edited either.
     """
     body = {
         "event_id": event_id, "session_id": session_id, "seq": seq, "kind": kind, "decision": decision,
@@ -31,6 +35,9 @@ def receipt_payload(version: int, event_id: str, session_id: str, seq: int, kind
     }
     if version >= 2:
         body.update({"v": 2, "agent_id": agent_id, "original_sha": _sha(original_text), "processed_sha": _sha(anonymized_text)})
+    if version >= 3:
+        body.update({"v": 3, "user_id": user_id, "parent_agent_id": parent_agent_id,
+                     "authority_sha": _sha(authority), "entities_sha": _sha(",".join(sorted(entities or [])))})
     return json.dumps(body, sort_keys=True, separators=(",", ":"))
 
 
@@ -92,6 +99,7 @@ class AuditLogger:
         kind: str = "prompt",
         tool_name: Optional[str] = None,
         decision: Optional[str] = None,
+        authority: Optional[Dict[str, Any]] = None,
     ) -> Optional[str]:
         event_id = None
         session_ext = identity.session_external_id if identity else DEFAULT_SESSION
@@ -132,6 +140,7 @@ class AuditLogger:
                 tool_name=tool_name,
                 anonymized_text=anonymized_prompt if final_decision == "redact" else None,
                 original_text=original_prompt or None,
+                authority=json.dumps(authority, sort_keys=True, separators=(",", ":")) if authority else None,
             )
             db.add(event)
             db.flush()
@@ -157,8 +166,10 @@ class AuditLogger:
             prev_hash = last.hash if last else GENESIS_HASH
             seq = last.seq + 1 if last else 1
             payload = receipt_payload(
-                2, event.id, session.id, seq, event.kind, event.decision, event.action_mode, pii_count, prev_hash,
+                3, event.id, session.id, seq, event.kind, event.decision, event.action_mode, pii_count, prev_hash,
                 agent_id=event.agent_id, original_text=event.original_text, anonymized_text=event.anonymized_text,
+                user_id=user.user_uuid, parent_agent_id=agent.parent_agent_id, authority=event.authority,
+                entities=[m.entity_type for m in matches],
             )
             db.add(DBReceipt(
                 session_id=session.id,
@@ -341,6 +352,10 @@ class AuditLogger:
             )
             prev = GENESIS_HASH
             seen_events = set()
+            sess_user = (
+                db.query(DBUser.user_uuid).join(DBSession, DBSession.user_id == DBUser.id)
+                .filter(DBSession.id == session_id).scalar()
+            )
             for i, (r, e) in enumerate(rows, start=1):
                 def broken(reason):
                     return {"ok": False, "receipts": len(rows), "broken_at_seq": r.seq, "reason": reason}
@@ -368,9 +383,19 @@ class AuditLogger:
                 egress = getattr(e, "egress_pii_count", 0) or 0
                 pii = (e.pii_count or 0) - egress
                 decisions = [e.decision] if not egress else [e.decision, "allow", "redact", "block"]
+                agent_row = db.query(DBAgent).filter(DBAgent.id == e.agent_id).first()
+                parent_id = agent_row.parent_agent_id if agent_row else None
+                ents = [t for (t,) in db.query(DBPIIFinding.entity_type).filter(
+                    DBPIIFinding.event_id == e.id, DBPIIFinding.direction.in_(["ingress"])).all()]
+                if not ents:   # rows written before the direction column existed have it empty
+                    ents = [t for (t,) in db.query(DBPIIFinding.entity_type).filter(
+                        DBPIIFinding.event_id == e.id, DBPIIFinding.direction.is_(None)).all()]
                 candidates = []
                 for dec in decisions:
                     candidates += [
+                        receipt_payload(3, e.id, session_id, r.seq, e.kind, dec, e.action_mode, pii, r.prev_hash,
+                                        agent_id=e.agent_id, original_text=e.original_text, anonymized_text=e.anonymized_text,
+                                        user_id=sess_user, parent_agent_id=parent_id, authority=e.authority, entities=ents),
                         receipt_payload(2, e.id, session_id, r.seq, e.kind, dec, e.action_mode, pii, r.prev_hash,
                                         agent_id=e.agent_id, original_text=e.original_text, anonymized_text=e.anonymized_text),
                         # older receipts: metadata only, and for proxy events the decision argument was left empty
@@ -378,7 +403,7 @@ class AuditLogger:
                     ]
                 candidates.append(receipt_payload(1, e.id, session_id, r.seq, e.kind, None, e.action_mode, pii, r.prev_hash))
                 if not any(receipt_hash(r.prev_hash, c) == r.hash for c in candidates):
-                    return broken("stored event no longer matches what was hashed (decision, text or agent was changed)")
+                    return broken("stored event no longer matches what was hashed (decision, text, agent, parent, user, authority evidence or findings was changed)")
                 prev = r.hash
             return {"ok": True, "receipts": len(rows), "broken_at_seq": None, "reason": "chain intact"}
         finally:
@@ -418,6 +443,9 @@ class AuditLogger:
                     "decision": e.decision if e else None,
                     "action_mode": e.action_mode if e else None,
                     "pii_count": e.pii_count if e else None,
+                    "entities": sorted({t for (t,) in db.query(DBPIIFinding.entity_type).filter(
+                        DBPIIFinding.event_id == e.id, DBPIIFinding.direction.in_(["ingress"])).all()}) if e else [],
+                    "authority": json.loads(e.authority) if e is not None and e.authority else None,
                     "event_id": r.event_id,
                     "previous_hash": r.prev_hash,
                     "hash": r.hash,
@@ -429,6 +457,16 @@ class AuditLogger:
                     )
                     item["score_delta"] = sum(d for d, _ in led)
                     item["score_reasons"] = [r_ for _, r_ in led]
+                    # score the agent held right after this decision (own score, before the delegation cap)
+                    own = 100 if a is None else a.initial_score
+                    ceiling = 100 if a is None else a.ceiling
+                    after = None
+                    for ev_id, d in db.query(DBScoreLedger.event_id, DBScoreLedger.delta).filter(
+                            DBScoreLedger.agent_id == e.agent_id).order_by(DBScoreLedger.created_at.asc(), DBScoreLedger.id.asc()).all():
+                        own = max(0, min(ceiling, own + d))
+                        if ev_id == e.id:
+                            after = own
+                    item["score_after"] = own if after is None else after
                 out.append(item)
             return out
         finally:

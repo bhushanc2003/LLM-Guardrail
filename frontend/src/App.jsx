@@ -222,7 +222,7 @@ function LandingPage() {
   const active = presets[activeTab];
 
   const copyCurl = () => {
-    navigator.clipboard.writeText(`curl -X POST http://localhost:8000/v1/chat/completions \\
+    navigator.clipboard.writeText(`curl -X POST http://localhost:8080/v1/chat/completions \\
   -H "Content-Type: application/json" \\
   -H "Authorization: Bearer YOUR_API_KEY" \\
   -H "X-Action-Mode: HASH" \\
@@ -909,7 +909,7 @@ function LandingPage() {
             color: '#38bdf8',
             overflowX: 'auto',
           }}>
-            <span style={{ color: '#ec4899' }}>curl</span> -X POST http://localhost:8000/v1/chat/completions \\<br />
+            <span style={{ color: '#ec4899' }}>curl</span> -X POST http://localhost:8080/v1/chat/completions \\<br />
             &nbsp;&nbsp;-H <span style={{ color: '#10b981' }}>"Content-Type: application/json"</span> \\<br />
             &nbsp;&nbsp;-H <span style={{ color: '#10b981' }}>"X-Action-Mode: HASH"</span> \\<br />
             &nbsp;&nbsp;-H <span style={{ color: '#10b981' }}>"Authorization: Bearer YOUR_API_KEY"</span> \\<br />

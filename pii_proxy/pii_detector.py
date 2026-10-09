@@ -117,7 +117,7 @@ class PIIDetector:
         )
         self.regex_name_context = re.compile(
             r'(?i:Dr\.|Mr\.|Mrs\.|Ms\.|Prof\.|Patient|Employee|Doctor|User|Person)[:#\s]+'
-            r'([A-Z][a-z]+(?:\s+[A-Z]\.?)?\s+[A-Z][a-z]+)'
+            r'([A-Z][a-z]+(?:[ \t]+[A-Z]\.?)?[ \t]+[A-Z][a-z]+)'
         )
 
         # ----------------------------------------------------
@@ -253,8 +253,18 @@ class PIIDetector:
         self.regex_indian_mobile_spaced = re.compile(r'(?:\+91[\s-]?)?\b[6-9]\d{4}[\s-]\d{5}\b')
         self.regex_emp_bare = re.compile(r'\bEMP-?\d{3,8}\b', re.IGNORECASE)
 
+        # --- prefixed / labelled identifier shapes found in the full GuardRailBench records ---
+        self.regex_acct_prefixed = re.compile(r'\b(?:ACCT|ACC|AC)-\d{6,14}\b')
+        self.regex_member_prefixed = re.compile(r'\b(?:SUB|POL|MEM|CLM)-\d{6,14}\b|\b[A-Z]{2,8}-INS-\d{6,14}\b|(?:Health plan(?: number| no\.?)?|Plan ID)[:#\s]+[A-Za-z0-9-]{6,24}\b|(?:Subscriber ID|Policy no\.?|Policy number|Member no\.?)[:#\s]+[A-Za-z0-9-]{6,16}\b', re.IGNORECASE)
+        self.regex_dl_prefixed = re.compile(r'\b[A-Z]{2}-DL-\d{6,10}\b')
+        self.regex_serial_prefixed = re.compile(r'\b[A-Z]{2,4}-SN-\d{5,10}\b')
+        self.regex_plate_labelled = re.compile(r'(?:Vehicle plate|Plate no\.?|Registration no\.?|licen[cs]e plate(?: number| no\.?)?|number plate)[:#\s]+(?:is\s+)?[A-Z]{2,3}-?\d{3,4}\b', re.IGNORECASE)
+        # generic "id 512592" / "ID: AB-1234": a labelled identifier that must contain a digit
+        self.regex_generic_id = re.compile(r'(?<![A-Za-z])(?:ID|Identifier|Ref(?:erence)?)(?:\s*(?:no\.?|number|#))?[:#\s]+(?=[A-Za-z0-9-]*\d)[A-Za-z0-9-]{4,24}\b', re.IGNORECASE)
+        self.regex_username = re.compile(r'(?:Username|User name|Login|Handle)[:#\s]+[A-Za-z0-9._-]{4,32}\b|\b[a-z]{2,}_[a-z]{2,}\d{1,3}\b', re.IGNORECASE)
+
         # Bare capitalised name runs, e.g. "Jane Smith" inside raw record text (no "Patient"/"Dr." cue).
-        self.regex_name_run = re.compile(r'\b[A-Z][a-z]+(?:\s+(?:[A-Z]\.|[A-Z][a-z]+)){1,3}\b')
+        self.regex_name_run = re.compile(r'\b[A-Z][a-z]+(?:[ \t]+(?:[A-Z]\.|[A-Z][a-z]+)){1,3}\b')   # same line only: a name never spans a line break
         self.NAME_STOP = {w.lower() for w in '''
             The A An This That These Those There Here What Which Who When Where Why How Please Find Search Send Email Mail
             Look Get Show Tell Give Check Read Update Delete Schedule Submit Book Cancel Ask Answer Note Is Are Was Were
@@ -264,7 +274,7 @@ class PIIDetector:
             March April May June July August September October November December Mg Daily Twice Disorder Cancer Breast
             Infection Diabetes Hypertension Carcinoma Ductal Invasive Bipolar Asymptomatic Dear Hello Hi Thanks Thank
             Regards Reminder Subject From To Cc Re Fwd In On At For Of And Or If It Its Our Your My We You They He She
-            Tamoxifen Ondansetron Metoprolol Lithium Quetiapine Lorazepam Biktarvy IGNORE Name Phone Number Address
+            Dr Mr Mrs Ms Prof Call Contact Speak Meet Tamoxifen Ondansetron Metoprolol Lithium Quetiapine Lorazepam Biktarvy IGNORE Name Phone Number Address
         '''.split()}
 
         self.GENERIC_NOUN_STOP = {
@@ -310,6 +320,13 @@ class PIIDetector:
         _add(self.regex_uuid, "DEVICE_ID", 13, 0.98, "SHARED")
         _add(self.regex_phone, "PHONE", 4, 0.90, "SHARED")
         _add(self.regex_individual_date, "INDIVIDUAL_DATE", 3, 0.94, "SHARED")
+        _add(self.regex_acct_prefixed, "ACCOUNT_NUMBER", 10, 0.95, "SHARED")
+        _add(self.regex_member_prefixed, "HEALTH_BENEFICIARY_ID", 9, 0.93, "SHARED")
+        _add(self.regex_dl_prefixed, "LICENSE_NUMBER", 11, 0.95, "SHARED")
+        _add(self.regex_serial_prefixed, "DEVICE_ID", 13, 0.95, "SHARED")
+        _add(self.regex_plate_labelled, "VEHICLE_ID", 12, 0.93, "SHARED")
+        _add(self.regex_generic_id, "ID_NUMBER", 11, 0.9, "SHARED")
+        _add(self.regex_username, "USERNAME", 10, 0.88, "SHARED")
 
         # ----------------------------------------------------
         # 2. EVALUATE DETERMINISTIC HIPAA PATTERNS

@@ -8,7 +8,7 @@ tests (2, 3, 4, 7) call tools through LangChain directly and need no model. What
     # 2. run the tests:
     python integrations/test_guardrail_callbacks.py                # prints PASS / FAIL per test
     python -m pytest integrations/test_guardrail_callbacks.py -v   # same, if pytest is installed
-    GOVERNANCE_URL=http://localhost:8000 python integrations/test_guardrail_callbacks.py   # another server
+    GOVERNANCE_URL=http://localhost:8080 python integrations/test_guardrail_callbacks.py   # another server
 
 What each test proves (each uses its own user and session, so runs do not affect each other):
   1 prompt PII is masked in place before the (real) model sees it
@@ -36,7 +36,7 @@ from langgraph.graph import END, START, StateGraph
 from integrations.guardrail_callbacks import GovernanceDenied, GuardrailCallbackHandler
 from integrations.llm_config import llm_settings, make_chat_model
 
-BASE = os.getenv("GOVERNANCE_URL", "http://localhost:8000")
+BASE = os.getenv("GOVERNANCE_URL", "http://localhost:8080")
 logging.getLogger("langchain_core.callbacks.manager").setLevel(logging.CRITICAL)
 
 
@@ -143,10 +143,10 @@ def test_4_injection_cuts_score_then_in_scope_high_risk_tool_is_denied():
     _skip_if_down()
     h = _handler(default_agent="payout", allowed_tools={"payout": ["read_note", "wire"]})
     cfg = {"callbacks": [h]}
-    _run_tool("read_note", {"note_id": "1"}, cfg)      # score 100 -> 80
-    _run_tool("wire", {"account": "A-1"}, cfg)         # 80 >= 80: still allowed (and a clean result earns +3)
-    _run_tool("read_note", {"note_id": "1"}, cfg)      # 83 -> 63
-    out = _run_tool("wire", {"account": "A-2"}, cfg)   # high risk needs 80: denied although 'wire' is declared
+    _run_tool("wire", {"account": "A-1"}, cfg)         # 100 >= 60: allowed (a clean result earns +3)
+    for _ in range(4):
+        _run_tool("read_note", {"note_id": "1"}, cfg)  # each injected note costs -15 (+3 for the clean call)
+    out = _run_tool("wire", {"account": "A-2"}, cfg)   # score is now below 60: denied although 'wire' is declared
     decisions = [e["allow"] for e in h.log if e["hook"] == "tool_call" and e.get("tool") == "wire"]
     assert decisions == [True, False], f"expected allowed then denied, got {decisions}"
     assert out.startswith("BLOCKED: tool 'wire'")
@@ -159,7 +159,7 @@ class _S(TypedDict):
 
 def _graph(model):
     def sub(state, config: RunnableConfig):      # sub-agent declares NO tools: every call is out of scope
-        for _ in range(4):
+        for _ in range(10):
             _run_tool("danger", {"x": "1"}, config)
         return {"notes": ["sub done"]}
 
@@ -194,8 +194,8 @@ def test_6_collapsed_sub_agent_reply_is_not_passed_on():
     h = _handler(default_agent="orchestrator", allowed_tools={"sub_agent": []},
                  agent_for_node={"sub_agent": ("sub_agent", "orchestrator")})
     cfg = {"callbacks": [h], "metadata": {"langgraph_node": "sub_agent"}}
-    for _ in range(4):
-        _run_tool("danger", {"x": "1"}, cfg)               # sub_agent -> 0
+    for _ in range(10):
+        _run_tool("danger", {"x": "1"}, cfg)               # -10 each: sub_agent falls below 20
     reply = _model().invoke([HumanMessage(content="Reply with one short sentence: here is the record you asked for.")], cfg)
     assert reply.content.startswith("output blocked: agent 'sub_agent'"), reply.content
 
@@ -205,6 +205,23 @@ def test_7_tool_result_pii_masked():
     h = _handler(default_agent="agent", allowed_tools={"agent": ["lookup"]})
     out = _run_tool("lookup", {"name": "Anita"}, {"callbacks": [h]})
     assert "ABCPR1234K" not in out and "98765 43210" not in out, out
+
+
+def test_8_governed_tool_decorator_gates_and_redacts():
+    _skip_if_down()
+    from integrations.guardrail_callbacks import governed_tool
+
+    @governed_tool(risk="low", agent_id="deco_agent", allowed_tools=["lookup"], base_url=BASE)
+    def lookup(name):
+        return "Contact ABCPR1234K phone 98765 43210"
+
+    @governed_tool(risk="high", agent_id="deco_agent", allowed_tools=["lookup"], base_url=BASE)
+    def danger():
+        raise RuntimeError("should never run")
+
+    out = lookup("Anita")
+    assert "ABCPR1234K" not in out and "98765 43210" not in out, out
+    assert danger().startswith("BLOCKED: tool 'danger'")
 
 
 if __name__ == "__main__":

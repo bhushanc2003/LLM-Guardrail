@@ -1,5 +1,6 @@
-# Optional NER pass (names / places). Local only: too large for the Vercel function, so not in requirements.txt.
-# Install:  pip install -r requirements-ner.txt && python -m spacy download en_core_web_sm
-# Enable:   ENABLE_PRESIDIO=true in .env
-presidio-analyzer
-spacy
+# Optional neural name/place detection (GLiNER). Local only: too large for the Vercel function, so not in requirements.txt.
+# Install (CPU build keeps it small; pin transformers, newer ones break gliner):
+#   pip install torch --index-url https://download.pytorch.org/whl/cpu
+#   pip install gliner "transformers>=4.51.3,<5.17"
+# Enable:   ENABLE_GLINER=true in .env (the model downloads on first start); then switch "Advanced Filtering" on per user in the dashboard.
+gliner

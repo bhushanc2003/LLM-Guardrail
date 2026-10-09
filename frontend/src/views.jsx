@@ -216,7 +216,7 @@ const SERIES = ['#3987e5', '#d95926', '#199e70', '#c98500', '#d55181', '#008300'
 
 function ScoreChart({ agents }) {
   const [tip, setTip] = useState(null);
-  const W = 760, H = 250, L = 38, R = agents.length <= 4 ? 110 : 16, T = 14, B = 30;
+  const W = 760, H = 250, L = 38, R = 16, T = 14, B = 30;
   // every score change across all agents, in time order; x = position in that sequence
   const events = [];
   agents.forEach((a, ai) => a.trend.slice(1).forEach(t => events.push({ ...t, agent: a.agent_name, ai })));
@@ -230,10 +230,10 @@ function ScoreChart({ agents }) {
     const pts = [{ x: 0, score: a.trend[0].score }, ...events.filter(e => e.ai === ai).map(e => ({ x: e.x, score: e.score }))];
     pts.push({ x: N, score: a.score });
     let d = `M${X(pts[0].x)},${Y(pts[0].score)}`;
-    for (let i = 1; i < pts.length; i++) d += ` L${X(pts[i].x)},${Y(pts[i - 1].score)} L${X(pts[i].x)},${Y(pts[i].score)}`;
+    for (let i = 1; i < pts.length; i++) d += ` L${X(pts[i].x)},${Y(pts[i].score)}`;
     return { name: a.agent_name, color: SERIES[ai % SERIES.length], d, end: pts[pts.length - 1].score };
   });
-  const gates = [[80, 'high-risk tools need 80'], [50, 'medium need 50'], [20, 'below 20 blocks output']];
+  const gates = [[60, 'high-risk tools need 60'], [40, 'medium need 40'], [30, 'low-risk need 30'], [20, 'below 20 blocks output']];
 
   return (
     <div style={{ position: 'relative' }}>
@@ -266,9 +266,6 @@ function ScoreChart({ agents }) {
             ? <circle key={i} cx={cx} cy={cy} r="5" fill={color} stroke="#0c1327" strokeWidth="2" {...common} />
             : <rect key={i} x={cx - 4.5} y={cy - 4.5} width="9" height="9" transform={`rotate(45 ${cx} ${cy})`} fill={color} stroke="#0c1327" strokeWidth="2" {...common} />;
         })}
-        {agents.length <= 4 && lines.map(l => (
-          <text key={l.name} x={W - R + 8} y={Y(l.end) + 4} fontSize="11" fill="#e2e8f0">{l.name}</text>
-        ))}
       </svg>
       {tip && (
         <div style={{
@@ -286,10 +283,99 @@ function ScoreChart({ agents }) {
           <span key={l.name} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
             <span style={{ width: '10px', height: '10px', borderRadius: '50%', background: l.color, display: 'inline-block' }} />
             <span style={{ fontFamily: mono }}>{l.name}</span>
+            <span style={{ fontFamily: mono, color: l.color, fontWeight: 700 }}>{l.end}</span>
           </span>
         ))}
         <span style={{ color: C.faint }}>● penalty · ◆ reward</span>
       </div>
+    </div>
+  );
+}
+
+const trunc = (t, n) => (t && t.length > n ? t.slice(0, n - 1) + '…' : t);
+
+// Flow diagram of one session: user -> agents (delegation, left to right) -> final answer, with every tool each agent tried.
+function AgentFlowGraph({ agents, verdict }) {
+  const NW = 196, GAP = 78, PAD = 14, CHIP = 19, HEAD = 78;
+  const byId = Object.fromEntries(agents.map(a => [a.agent_id, a]));
+  const depthOf = a => { let d = 0, cur = a, seen = new Set(); while (cur.parent_agent_id && byId[cur.parent_agent_id] && !seen.has(cur.agent_id)) { seen.add(cur.agent_id); cur = byId[cur.parent_agent_id]; d++; } return d; };
+  const nodes = agents.map(a => {
+    const tools = a.tools || [];
+    const shown = tools.slice(0, 4);
+    return { ...a, depth: depthOf(a) + 1, shown, more: tools.length - shown.length, h: HEAD + shown.length * CHIP + (tools.length > 4 ? CHIP : 0) + 8 };
+  });
+  const cols = Math.max(...nodes.map(n => n.depth), 1) + 2;       // user + agent depths + final
+  const colH = Array.from({ length: cols }, (_, c) => nodes.filter(n => n.depth === c).reduce((t, n) => t + n.h + PAD, 0));
+  const H = Math.max(...colH, 120) + PAD * 2 + 56;
+  const W = cols * NW + (cols - 1) * GAP + PAD * 2;
+  const X = c => PAD + c * (NW + GAP);
+  for (let c = 1; c < cols - 1; c++) {
+    let y = PAD + (H - PAD * 2 - colH[c] + PAD) / 2;
+    nodes.filter(n => n.depth === c).forEach(n => { n.x = X(c); n.y = y; y += n.h + PAD; });
+  }
+  const userN = { x: X(0), y: H / 2 - 28, w: NW, h: 56 };
+  const finalN = { x: X(cols - 1), y: H / 2 - 28, w: NW, h: 56 };
+  const scoreColor = v => (v >= 60 ? C.allow : v >= 30 ? C.redact : C.block);
+  const curve = (x1, y1, x2, y2) => `M${x1},${y1} C${x1 + GAP * 0.55},${y1} ${x2 - GAP * 0.55},${y2} ${x2},${y2}`;
+  const roots = nodes.filter(n => n.depth === 1);
+  const okColor = verdict?.allowed ? C.allow : C.block;
+
+  return (
+    <div style={{ overflowX: 'auto', margin: '4px 0 14px', border: `1px solid ${C.border}`, borderRadius: '10px', background: 'rgba(6,10,24,0.55)' }}>
+      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', minWidth: Math.min(W, 640), height: 'auto', display: 'block' }} role="img" aria-label="Agent flow for this session">
+        <defs>
+          <marker id="arr" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#64748b" /></marker>
+          <marker id="arrOk" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill={okColor} /></marker>
+        </defs>
+        {roots.map(r => <path key={'u' + r.agent_id} d={curve(userN.x + NW, userN.y + 28, r.x, r.y + 34)} fill="none" stroke="#64748b" strokeWidth="1.6" markerEnd="url(#arr)" />)}
+        {nodes.filter(n => n.depth > 1 && byId[n.parent_agent_id]).map(n => {
+          const p = nodes.find(q => q.agent_id === n.parent_agent_id);
+          return <path key={'e' + n.agent_id} d={curve(p.x + NW, p.y + 34, n.x, n.y + 34)} fill="none" stroke="#64748b" strokeWidth="1.6" markerEnd="url(#arr)" />;
+        })}
+        {roots.map(r => <path key={'f' + r.agent_id} d={`M${r.x + NW / 2},${r.y + r.h} C${r.x + NW / 2},${H + 14} ${finalN.x + NW / 2},${H + 14} ${finalN.x + NW / 2},${finalN.y + 56}`} fill="none" stroke={okColor} strokeWidth="1.8" strokeDasharray="5 4" markerEnd="url(#arrOk)" />)}
+
+        <g>
+          <rect x={userN.x} y={userN.y} width={NW} height={56} rx="12" fill="#101a33" stroke={C.border} />
+          <text x={userN.x + NW / 2} y={userN.y + 24} textAnchor="middle" fontSize="13" fontWeight="700" fill="#e2e8f0">User</text>
+          <text x={userN.x + NW / 2} y={userN.y + 42} textAnchor="middle" fontSize="11" fill="#94a3b8">request in</text>
+        </g>
+        <g>
+          <rect x={finalN.x} y={finalN.y} width={NW} height={56} rx="12" fill="#101a33" stroke={okColor} strokeWidth="1.5" />
+          <text x={finalN.x + NW / 2} y={finalN.y + 24} textAnchor="middle" fontSize="13" fontWeight="700" fill={okColor}>{verdict?.allowed ? 'Answer released' : 'Answer blocked'}</text>
+          <text x={finalN.x + NW / 2} y={finalN.y + 42} textAnchor="middle" fontSize="11" fill="#94a3b8">session verdict</text>
+        </g>
+
+        {nodes.map(n => {
+          const col = scoreColor(n.score);
+          const capped = n.effective_score !== n.score;
+          const R = 19, cx = n.x + 30, cy = n.y + 38, circ = 2 * Math.PI * R;
+          return (
+            <g key={n.agent_id}>
+              <title>{`${n.agent_name}: own ${n.score}, effective ${n.effective_score}${n.parent_agent_name ? `, delegated by ${n.parent_agent_name}` : ''}`}</title>
+              <rect x={n.x} y={n.y} width={NW} height={n.h} rx="12" fill="#101a33" stroke={n.denied_calls ? C.block : C.border} strokeWidth={n.denied_calls ? 1.4 : 1} />
+              <circle cx={cx} cy={cy} r={R} fill="none" stroke="rgba(148,163,184,0.2)" strokeWidth="5" />
+              <circle cx={cx} cy={cy} r={R} fill="none" stroke={col} strokeWidth="5" strokeLinecap="round"
+                strokeDasharray={`${(n.score / 100) * circ} ${circ}`} transform={`rotate(-90 ${cx} ${cy})`} />
+              <text x={cx} y={cy + 4} textAnchor="middle" fontSize="12" fontWeight="700" fill="#f1f5f9">{n.score}</text>
+              <text x={n.x + 58} y={n.y + 28} fontSize="13" fontWeight="700" fill="#e2e8f0" fontFamily={mono}>{trunc(n.agent_name, 17)}</text>
+              <text x={n.x + 58} y={n.y + 46} fontSize="10.5" fill={capped ? C.redact : '#94a3b8'}>
+                {capped ? `effective ${n.effective_score} (capped)` : (n.parent_agent_name ? `from ${trunc(n.parent_agent_name, 14)}` : 'top-level agent')}
+              </text>
+              <text x={n.x + 58} y={n.y + 62} fontSize="10.5" fill="#94a3b8">
+                {n.tool_calls} call{n.tool_calls === 1 ? '' : 's'} · <tspan fill={n.denied_calls ? C.block : '#94a3b8'}>{n.denied_calls} denied</tspan>
+              </text>
+              {n.shown.map((t, i) => (
+                <text key={t.tool} x={n.x + 14} y={n.y + HEAD + 12 + i * CHIP} fontSize="11" fontFamily={mono} fill="#cbd5e1">
+                  {t.allowed > 0 && <tspan fill={C.allow}>✓{t.allowed} </tspan>}
+                  {t.denied > 0 && <tspan fill={C.block}>✕{t.denied} </tspan>}
+                  {trunc(t.tool, 19)}
+                </text>
+              ))}
+              {n.more > 0 && <text x={n.x + 14} y={n.y + HEAD + 12 + n.shown.length * CHIP} fontSize="10.5" fill="#94a3b8">+{n.more} more tool{n.more === 1 ? '' : 's'}</text>}
+            </g>
+          );
+        })}
+      </svg>
     </div>
   );
 }
@@ -330,12 +416,13 @@ function AgentPanel({ data, requestCount, violations }) {
       }}>
         Session verdict: <b>{data.verdict.allowed ? 'output allowed' : 'output blocked'}</b> · {data.verdict.reason}
       </div>
+      <AgentFlowGraph agents={agents} verdict={data.verdict} />
       <ScoreChart agents={agents} />
       <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '16px' }}>
         <thead>
           <tr>
             <th style={cellTh}>Agent</th>
-            <th style={cellTh}>Authority score</th>
+            <th style={cellTh}>Own score (tool gate uses the effective one)</th>
             <th style={{ ...cellTh, textAlign: 'right' }}>Tool calls</th>
             <th style={{ ...cellTh, textAlign: 'right' }}>Denied</th>
             <th style={{ ...cellTh, textAlign: 'right' }}>Violations</th>
@@ -343,7 +430,8 @@ function AgentPanel({ data, requestCount, violations }) {
         </thead>
         <tbody>
           {ordered.map(a => {
-            const c = colorFor(a.effective_score);
+            const c = colorFor(a.score);
+            const capped = a.effective_score !== a.score;
             return (
               <tr key={a.agent_id}>
                 <td style={{ ...cellTd, fontFamily: mono, paddingLeft: `${12 + a.depth * 22}px` }}>
@@ -351,12 +439,14 @@ function AgentPanel({ data, requestCount, violations }) {
                   {a.parent_agent_name && <span style={{ color: C.faint, fontSize: '0.75rem' }}> (from {a.parent_agent_name})</span>}
                 </td>
                 <td style={cellTd}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
                     <div style={{ width: '90px', height: '8px', borderRadius: '4px', background: 'rgba(148,163,184,0.2)', overflow: 'hidden' }}>
-                      <div style={{ width: `${a.effective_score}%`, height: '100%', background: c }} />
+                      <div style={{ width: `${a.score}%`, height: '100%', background: c }} />
                     </div>
-                    <span style={{ fontFamily: mono, color: '#e2e8f0', fontWeight: 700 }}>{a.effective_score}</span>
-                    {a.effective_score !== a.score && <span style={{ color: C.faint, fontSize: '0.75rem' }}>own {a.score}, capped by parent</span>}
+                    <span style={{ fontFamily: mono, color: '#e2e8f0', fontWeight: 700 }} title="The agent's own score">{a.score}</span>
+                    {capped && <span style={{ color: C.redact, fontSize: '0.75rem' }} title="Effective score = lower of the agent's own score and its parent's. Tool gates use this one.">
+                      effective {a.effective_score}: capped by {a.parent_agent_name || 'parent'}
+                    </span>}
                   </div>
                 </td>
                 <td style={{ ...cellTd, textAlign: 'right' }}>{a.tool_calls}</td>
@@ -1644,6 +1734,41 @@ function CircularScoreRing({
   );
 }
 
+function MiniLineChart({ points = [], valueKey, color = '#00f2fe', height = 90, max = null, unit = '' }) {
+  const vals = points.map(p => Number(p[valueKey]) || 0);
+  const top = max != null ? max : Math.max(1, ...vals);
+  const W = 300;
+  const x = i => (points.length > 1 ? (i / (points.length - 1)) * W : W / 2);
+  const y = v => height - 6 - (Math.min(v, top) / top) * (height - 12);
+  const path = vals.map((v, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' ');
+  const last = vals.length ? vals[vals.length - 1] : 0;
+  const ticks = [top, top / 2, 0];
+  const fmt = v => (v >= 10000 ? `${Math.round(v / 1000)}k` : v >= 1000 ? `${(v / 1000).toFixed(1)}k` : String(Math.round(v)));
+  const tickStyle = { fontSize: '0.68rem', color: '#94a3b8', fontFamily: 'monospace', lineHeight: 1 };
+  return (
+    <div>
+      <div style={{ display: 'flex', gap: '8px' }}>
+        <div style={{ position: 'relative', width: '34px', height, flexShrink: 0 }}>
+          {ticks.map((t, i) => (
+            <span key={i} style={{ ...tickStyle, position: 'absolute', right: 0, top: y(t) - 5 }}>{fmt(t)}{unit}</span>
+          ))}
+        </div>
+        <svg viewBox={`0 0 ${W} ${height}`} width="100%" height={height} preserveAspectRatio="none" role="img" aria-label={`${valueKey} over time`} style={{ flex: 1 }}>
+          {ticks.map((t, i) => (
+            <line key={i} x1="0" x2={W} y1={y(t)} y2={y(t)} stroke="rgba(255,255,255,0.08)" strokeDasharray={i === 2 ? '' : '3 3'} vectorEffect="non-scaling-stroke" />
+          ))}
+          {vals.length > 0 && <path d={path} fill="none" stroke={color} strokeWidth="2" vectorEffect="non-scaling-stroke" />}
+        </svg>
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', color: '#94a3b8', marginTop: '4px', paddingLeft: '42px' }}>
+        <span>{points[0]?.day || ''}</span>
+        <span style={{ color, fontWeight: 700 }}>now {Math.round(last).toLocaleString()}{unit}</span>
+        <span>{points[points.length - 1]?.day || ''}</span>
+      </div>
+    </div>
+  );
+}
+
 function MiniViolationBarChart({ chart = [], totalViolations = 0, height = 85 }) {
   const [hovered, setHovered] = useState(null);
   const displayDays = useMemo(() => {
@@ -1860,6 +1985,9 @@ export function TrustAnalyticsView({ authedFetch, me, isAdmin, initialUuid }) {
   const streakBonus = metrics.streak_bonus ?? 0;
   const cumulativePenalties = metrics.cumulative_penalties ?? 0;
   const violationChart = metrics.violation_chart || [];
+  const usageChart = metrics.usage_chart || [];
+  const ratingTrend = metrics.rating_trend || [];
+  const violationHistory = metrics.violation_history || [];
   const trustTier = metrics.trust_tier || 'Tier 2: Trusted Operator';
   const trustColor = metrics.trust_color || '#00f2fe';
 
@@ -2223,6 +2351,24 @@ export function TrustAnalyticsView({ authedFetch, me, isAdmin, initialUuid }) {
                   </div>
                   <MiniViolationBarChart chart={violationChart} totalViolations={totalViolations} height={85} />
                 </div>
+
+                {/* Rating trend + violation history */}
+                <div style={{ padding: '14px', background: 'rgba(6, 10, 24, 0.7)', border: `1px solid ${C.border}`, borderRadius: '10px' }}>
+                  <div style={{ fontSize: '0.8rem', fontWeight: 600, color: '#cbd5e1', marginBottom: '8px' }}>Rating Trend (last 30 days)</div>
+                  <MiniLineChart points={ratingTrend} valueKey="rating" color={trustColor} max={100} height={90} />
+                </div>
+                <div style={{ padding: '14px', background: 'rgba(6, 10, 24, 0.7)', border: `1px solid ${C.border}`, borderRadius: '10px' }}>
+                  <div style={{ fontSize: '0.8rem', fontWeight: 600, color: '#cbd5e1', marginBottom: '8px' }}>Violation History</div>
+                  {violationHistory.length === 0 ? (
+                    <div style={{ fontSize: '0.78rem', color: '#10b981' }}>No violations recorded.</div>
+                  ) : violationHistory.map((v, i) => (
+                    <div key={i} style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', fontSize: '0.76rem', padding: '4px 0', borderTop: i ? `1px solid ${C.border}` : 'none' }}>
+                      <span style={{ color: '#94a3b8', fontFamily: mono }}>{v.when ? new Date(v.when).toLocaleString() : ''}</span>
+                      <span style={{ color: '#fb7185', fontWeight: 600, textTransform: 'uppercase' }}>{v.category}</span>
+                      <span style={{ color: '#cbd5e1', flex: 1, textAlign: 'right' }}>{(v.entities || []).join(', ') || 'policy'}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
             </Card>
 
@@ -2244,6 +2390,11 @@ export function TrustAnalyticsView({ authedFetch, me, isAdmin, initialUuid }) {
                     <div style={{ width: `${promptPct}%`, height: '100%', background: 'linear-gradient(90deg, #00f2fe, #38bdf8)' }} />
                     <div style={{ width: `${complPct}%`, height: '100%', background: 'linear-gradient(90deg, #a855f7, #c084fc)' }} />
                   </div>
+                </div>
+
+                <div style={{ padding: '16px', background: 'rgba(6, 10, 24, 0.7)', border: `1px solid ${C.border}`, borderRadius: '10px' }}>
+                  <div style={{ fontSize: '0.8rem', fontWeight: 600, color: '#cbd5e1', marginBottom: '8px' }}>Tokens per Day (last 30 days)</div>
+                  <MiniLineChart points={usageChart} valueKey="tokens" color="#a855f7" height={90} />
                 </div>
 
                 {/* Clean Tokens vs Violation Tokens */}

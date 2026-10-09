@@ -21,7 +21,7 @@ CASES = [
     ("Insurance ID: BCB-9988776, MRN-000481923", ["BCB-9988776", "MRN-000481923"]),
 ]
 d = PIIDetector(); a = PIIAnonymizer(detector=d)
-print("NER on" if d.presidio_analyzer else "NER OFF (regex only)")
+print("GLiNER on" if d.gliner_model else "GLiNER off (regex only)")
 bad = 0
 for text, secrets in CASES:
     t = time.time(); out, _ = a.process_text(text, PIISessionVault(), mode="REDACT", aggressive_names=True); ms = (time.time() - t) * 1000

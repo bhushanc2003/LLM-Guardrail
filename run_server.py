@@ -9,10 +9,10 @@ def main():
         sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 0)
     except (AttributeError, OSError):
         pass
-    sock.bind(('::', 8000))
+    sock.bind(('::', 8080))
     sock.listen(128)
 
-    print("🚀 Dual-stack server listening on [::]:8000 (accessible via localhost, 127.0.0.1, and [::1])")
+    print("🚀 Dual-stack server listening on [::]:8080 (accessible via localhost, 127.0.0.1, and [::1])")
 
     config = uvicorn.Config(
         "pii_proxy.main:app",

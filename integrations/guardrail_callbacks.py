@@ -4,7 +4,7 @@ LangChain / LangGraph callback handler for the governance runtime.
 Attach it once and every LLM call and tool call in a LangChain agent or a LangGraph graph is checked through the
 same five governance hooks the GuardRailBench uses (POST /api/v1/on_*), with no change to the agent code:
 
-    handler = GuardrailCallbackHandler(base_url="http://localhost:8000", user_id="alice",
+    handler = GuardrailCallbackHandler(base_url="http://localhost:8080", user_id="alice",
                                        agent_for_node={"data_agent": ("data_agent", "orchestrator")},
                                        allowed_tools={"data_agent": ["search_patients"]},
                                        tool_risk={"search_patients": "low"})
@@ -22,11 +22,17 @@ What it does (native callback events):
 Agent identity: in LangGraph the node name (metadata["langgraph_node"]) is the agent; `agent_for_node` maps a node to
 (agent_id, parent_agent_id). In plain LangChain every call is `default_agent`.
 
+For code without callbacks (or string-returning tools whose result must be redacted), wrap the function itself:
+
+    @governed_tool(risk="high", agent_id="email_agent", allowed_tools=["send_email"], user_id="alice")
+    def send_email(to, body): ...
+
 Limits of callbacks (LangChain's design): they cannot replace an immutable value. A plain-string tool result cannot be
 rewritten by a callback (a ToolMessage can), so for string-returning tools wrap the tool function as well. Redaction
 relies on in-place edits of the message objects LangChain passes to the callback.
 """
 from typing import Any, Dict, List, Optional, Tuple
+import time
 import uuid
 
 import httpx
@@ -40,7 +46,7 @@ class GovernanceDenied(Exception):
 class GuardrailCallbackHandler(BaseCallbackHandler):
     raise_error = True   # let GovernanceDenied propagate out of the tool call
 
-    def __init__(self, base_url: str = "http://localhost:8000", user_id: str = "demo-user",
+    def __init__(self, base_url: str = "http://localhost:8080", user_id: str = "demo-user",
                  session_id: Optional[str] = None, default_agent: str = "agent",
                  agent_for_node: Optional[Dict[str, Tuple[str, Optional[str]]]] = None,
                  allowed_tools: Optional[Dict[str, List[str]]] = None,
@@ -150,3 +156,52 @@ class GuardrailCallbackHandler(BaseCallbackHandler):
                                       "session_id": self.session_id, "parent_agent_id": None,
                                       "summary": {"llm_calls": self.llm_calls, "tools_attempted": self.tool_calls,
                                                   "tools_blocked": self.tool_blocked, "agents_involved": self.agents_seen}})
+
+
+def governed_tool(risk: str = "medium", agent_id: str = "agent", parent_agent_id: Optional[str] = None,
+                  allowed_tools: Optional[List[str]] = None, user_id: str = "demo-user",
+                  session_id: Optional[str] = None, base_url: str = "http://localhost:8080", timeout: float = 2.0):
+    """
+    Decorator: every call of the wrapped function goes through on_tool_call before it runs (a denial returns the
+    same "BLOCKED: ..." text the GuardRailBench agents receive, and the function body never executes), and its
+    return value goes through on_tool_result (so a plain-string result is redacted, which a callback cannot do).
+    Works with any framework because it wraps the plain function.
+    """
+    import functools
+    import inspect
+    base = base_url.rstrip("/") + "/api/v1/"
+    sid = session_id or str(uuid.uuid4())
+    client = httpx.Client(timeout=timeout)
+
+    def post(hook, payload):
+        try:
+            return client.post(base + hook, json=payload).json()
+        except Exception:
+            return {}   # fail open, as the bench does
+
+    def wrap(fn):
+        name = fn.__name__
+        ident = {"user_id": user_id, "agent_id": agent_id, "session_id": sid, "parent_agent_id": parent_agent_id}
+
+        @functools.wraps(fn)
+        def inner(*args, **kwargs):
+            try:
+                bound = inspect.signature(fn).bind_partial(*args, **kwargs)
+                tool_args = dict(bound.arguments)
+            except TypeError:
+                tool_args = {"args": list(args), **kwargs}
+            allow = post("on_tool_call", {**ident, "tool_name": name, "tool_args": tool_args, "tool_risk": risk,
+                                          "agent_allowed_tools": allowed_tools if allowed_tools is not None else [name]}).get("allow", True)
+            if not allow:
+                return f"BLOCKED: tool '{name}' was denied by governance policy"
+            t0 = time.perf_counter()
+            try:
+                result, ok = fn(*args, **kwargs), True
+            except Exception as e:
+                result, ok = f"ERROR: {e}", False
+            text = result if isinstance(result, str) else str(result)
+            out = post("on_tool_result", {**ident, "tool_name": name, "result": text, "tool_succeeded": ok,
+                                          "latency_ms": int((time.perf_counter() - t0) * 1000)}).get("result")
+            return out if out is not None else result
+        return inner
+    return wrap

@@ -13,7 +13,9 @@ class Config:
         self.EMBEDDING_MODEL_ID: str = os.getenv("EMBEDDING_MODEL_ID", "BAAI/bge-small-en-v1.5")
         
         self.HOST: str = os.getenv("HOST", "0.0.0.0")
-        self.PORT: int = int(os.getenv("PORT", "8000"))
+        # send_email may only go to these domains (comma separated)
+        self.ALLOWED_EMAIL_DOMAINS = [d.strip().lower() for d in os.getenv("ALLOWED_EMAIL_DOMAINS", "example.com").split(",") if d.strip()]
+        self.PORT: int = int(os.getenv("PORT", "8080"))
         
         self._pii_action_mode: str = os.getenv("PII_ACTION_MODE", "HASH")
         self.DEANONYMIZE_OUTPUT: bool = os.getenv("DEANONYMIZE_OUTPUT", "true").lower() == "true"
