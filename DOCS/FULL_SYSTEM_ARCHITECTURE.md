@@ -8,184 +8,664 @@
 
 ---
 
-## Architecture Diagram (Mermaid Preview)
+## 1. Visual Systems Architecture Diagram (Live Rendered in Preview)
 
-```mermaid
-flowchart TD
-    %% ==========================================
-    %% TIER 1: CLIENT & INGESTION TIER
-    %% ==========================================
-    subgraph ClientTier["1. Ingestion & Client Tier"]
-        direction TB
-        WebApp["Enterprise Web Applications\n(React Dashboard / HTTPS)"]
-        IDE["Agentic IDEs & Extensions\n(Cursor / Cline / Open WebUI)"]
-        SDK["Enterprise Pipelines & SDKs\n(LangChain / LlamaIndex / REST)"]
-    end
+> [!NOTE]
+> **Full Architecture Diagram:** Rendered natively below as vector SVG with all 8 enterprise tiers, data plane buses, tool call enclaves, and multi-agent meshes.
 
-    %% ==========================================
-    %% TIER 2: REVERSE PROXY & GATEWAY
-    %% ==========================================
-    subgraph GatewayTier["2. API Gateway & Ingress Reverse Proxy (:8000)"]
-        direction TB
-        ProxyIngress["FastAPI ASGI Gateway\n/proxy/{uuid}/v1/chat/completions"]
-        AuthMiddleware["Clerk JWT Authentication & Rate Limiter"]
-        SessionRouter["Dynamic Mode Router\n(REDACT | BLOCK | HASH | LOG_ONLY)"]
-    end
+<div align="center" style="background-color: #060914; padding: 18px; border-radius: 14px; border: 1px solid rgba(0, 242, 254, 0.4); margin-bottom: 25px; overflow-x: auto;">
 
-    %% ==========================================
-    %% TIER 3: DUAL-TIER COMPLIANCE & INSPECTION ENGINE
-    %% ==========================================
-    subgraph ComplianceTier["3. Dual-Tier Compliance & PII Inspection Core"]
-        direction TB
-        
-        subgraph FastPath["Tier 0: Deterministic Fast-Path (<0.2 ms)"]
-            Aadhaar["Aadhaar Verhoeff Checksum\n(12-Digit UID, [2-9] Root)"]
-            PAN["PAN Card ITD Syntax\n([A-Z]{5}[0-9]{4}[A-Z])"]
-            UPI["UPI VPA Syntax Engine\n(@okaxis, @okhdfcbank, @paytm)"]
-            HIPAA_Keys["HIPAA Safe Harbor Regex\n(SSN, MRN, Health Plan IDs, Dates)"]
-            Luhn["Luhn Card Checksum & IBAN"]
-        end
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1150" width="100%" height="100%">
+  <defs>
+    <!-- Background Gradient -->
+    <radialGradient id="bgGrad" cx="50%" cy="25%" r="85%">
+      <stop offset="0%" stop-color="#0c122e" />
+      <stop offset="45%" stop-color="#060914" />
+      <stop offset="100%" stop-color="#020408" />
+    </radialGradient>
 
-        subgraph NeuralSLM["Tier 1: Zero-Shot Neural SLM (~40 ms)"]
-            GLiNER["GLiNER 152M Bi-encoder Engine\n(Threshold: 0.52 Precision Gate)"]
-            NamesLocs["Unanchored Names & Cities\n(Rahul Sharma, Indiranagar, Bengaluru)"]
-            StopFilter["GENERIC_NOUN_STOP Gate\n(Suppresses 'patient', 'doctor', 'office')"]
-            RxPreserve["Rx Drug Preservation Gate\n(Tamoxifen, Metoprolol = 0% False Alarms)"]
-        end
+    <!-- Tier Fill Gradients -->
+    <linearGradient id="tierClient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1e293b" stop-opacity="0.8" />
+      <stop offset="100%" stop-color="#0f172a" stop-opacity="0.8" />
+    </linearGradient>
 
-        Dedupe["Span Conflict Resolver & Token Deduplicator"]
-    end
+    <linearGradient id="tierGateway" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0d1b38" stop-opacity="0.85" />
+      <stop offset="100%" stop-color="#061026" stop-opacity="0.85" />
+    </linearGradient>
 
-    %% ==========================================
-    %% TIER 4: STATE & CRYPTOGRAPHIC VAULT
-    %% ==========================================
-    subgraph StorageTier["4. Cryptographic Vault & State Enclave"]
-        direction TB
-        Vault[("PIISessionVault\nIn-Memory HMAC-SHA256 Mapping\n[HASH:7a8b9c] ↔ Raw Entity")]
-        AuditDB[("Immutable Audit Ledger\nSQLite WAL / Forensic JSON Store\nSOC2 Type II & HIPAA Evidence")]
-    end
+    <linearGradient id="tierGuardrail" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#141a3d" stop-opacity="0.9" />
+      <stop offset="100%" stop-color="#090d24" stop-opacity="0.9" />
+    </linearGradient>
 
-    %% ==========================================
-    %% TIER 5: AGENT RUNTIME & REASONING ENCLAVE
-    %% ==========================================
-    subgraph AgentTier["5. Autonomous Agent Runtime (Single & Multi-Agent)"]
-        direction TB
+    <linearGradient id="tierAgent" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1c133b" stop-opacity="0.9" />
+      <stop offset="100%" stop-color="#0d0822" stop-opacity="0.9" />
+    </linearGradient>
 
-        subgraph SingleAgent["Single-Agent ReAct Execution Loop"]
-            AgentCore["Agent Reasoning Core\n(Ingests Safe Context with [HASH:id])"]
-            ReAct["Thought ➔ Action ➔ Observation Loop\n(Protected from Prompt Injection)"]
-            LLMGateway["Model Dispatch\n(OpenAI / Claude / Gemini Base APIs)"]
-        end
+    <linearGradient id="tierStorage" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0e2329" stop-opacity="0.9" />
+      <stop offset="100%" stop-color="#051217" stop-opacity="0.9" />
+    </linearGradient>
 
-        subgraph MultiAgent["Multi-Agent Orchestration Mesh"]
-            Supervisor["Supervisor / Orchestrator Agent\n(Task Decomposition & Delegation)"]
-            A2ABus{"Inter-Agent Guardrail Bus\n(A2A Gateway with RBAC Policy)"}
-            WorkerClinical["Worker Alpha: Clinical Specialist\n[HIPAA Permitted]"]
-            WorkerBilling["Worker Beta: Billing / Financial\n[DPDP Permitted]"]
-            WorkerPublic["Worker Gamma: Public Summarizer\n[Zero PII Permitted]"]
-        end
-    end
+    <!-- Component Accents -->
+    <linearGradient id="cyanGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#00f2fe" />
+      <stop offset="100%" stop-color="#4facfe" />
+    </linearGradient>
 
-    %% ==========================================
-    %% TIER 6: TOOL CALL & FUNCTION GUARDRAILS
-    %% ==========================================
-    subgraph ToolTier["6. Tool Execution Guardrail Enclave"]
-        direction TB
-        PreToolGuard["1. Pre-Execution Argument Guardrail\n• Inspects function args (query, payload)\n• Blocks external SSN/Card exfiltration"]
-        
-        subgraph ToolExecution["Sandboxed Tool Targets"]
-            DB[("SQL Database\nPostgres / MySQL")]
-            CRM["Internal CRM / EHR\nSalesforce / Epic"]
-            WebSearch["External Web / APIs\nSearch & Retrieval"]
-        end
-        
-        PostToolGuard["2. Post-Execution Return Scrubbing\n• Scans returned rows against HIPAA & DPDP\n• Strips DB raw PII before LLM context injection"]
-    end
+    <linearGradient id="purpleGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#a855f7" />
+      <stop offset="100%" stop-color="#d946ef" />
+    </linearGradient>
 
-    %% ==========================================
-    %% TIER 7: EGRESS SANITIZATION & CLIENT DELIVERY
-    %% ==========================================
-    subgraph EgressTier["7. Egress Guardrail & Streaming Gateway"]
-        direction TB
-        DualPassScan["Dual-Pass Output Inspection\n(Catches Model Hallucinations of PII)"]
-        ReverseVault["Reverse De-anonymization Engine\n(Restores [HASH:id] for Authorized Session)"]
-        SSEBuffer["Sliding-Window Streaming Buffer\n(Prevents PII Split across SSE Chunks)"]
-        FinalDelivery["Sanitized HTTP 200 / Streamed Chunk Delivery"]
-    end
+    <linearGradient id="greenGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#10b981" />
+      <stop offset="100%" stop-color="#34d399" />
+    </linearGradient>
 
-    %% ==========================================
-    %% TIER 8: CONTROL PLANE & TELEMETRY
-    %% ==========================================
-    subgraph ControlPlane["8. Control Plane, Scoring & Telemetry"]
-        direction TB
-        TrustScore["Authority-Trust Scoring Engine\nATS = 80 + StreakBonus - ViolationPenalty"]
-        EUS["Effective-Use Score (EUS)\nClean Ratio: 100%"]
-        SSEPush["Real-Time SSE Telemetry Stream\n/api/sessions/{id}/events"]
-        AdminDashboard["Real-Time Security Dashboard\n(Overview · Violations · Trust Analytics)"]
-    end
+    <linearGradient id="amberGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#f59e0b" />
+      <stop offset="100%" stop-color="#fbbf24" />
+    </linearGradient>
 
-    %% ==========================================
-    %% CONNECTORS & DATA FLOW
-    %% ==========================================
-    WebApp -->|HTTPS Request| ProxyIngress
-    IDE -->|API Payloads| ProxyIngress
-    SDK -->|Streaming Requests| ProxyIngress
+    <linearGradient id="redGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#ef4444" />
+      <stop offset="100%" stop-color="#f87171" />
+    </linearGradient>
 
-    ProxyIngress --> AuthMiddleware
-    AuthMiddleware --> SessionRouter
+    <!-- Cylinder Shading Gradients -->
+    <linearGradient id="dbGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#0284c7" />
+      <stop offset="35%" stop-color="#38bdf8" />
+      <stop offset="70%" stop-color="#0369a1" />
+      <stop offset="100%" stop-color="#0c4a6e" />
+    </linearGradient>
 
-    SessionRouter -->|Dispatch Text| FastPath
-    SessionRouter -->|Dispatch Text| NeuralSLM
+    <linearGradient id="dbTop" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#7dd3fc" />
+      <stop offset="100%" stop-color="#0284c7" />
+    </linearGradient>
 
-    FastPath --> Dedupe
-    NeuralSLM --> Dedupe
+    <linearGradient id="vaultGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#7c3aed" />
+      <stop offset="35%" stop-color="#c084fc" />
+      <stop offset="70%" stop-color="#6d28d9" />
+      <stop offset="100%" stop-color="#4c1d95" />
+    </linearGradient>
 
-    Dedupe -->|Token Mapping| Vault
-    Dedupe -->|Log Breach Events| AuditDB
+    <linearGradient id="vaultTop" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#e9d5ff" />
+      <stop offset="100%" stop-color="#9333ea" />
+    </linearGradient>
 
-    Dedupe -->|Safe Masked Prompt| AgentCore
-    Dedupe -->|Safe Masked Prompt| Supervisor
+    <!-- Markers -->
+    <marker id="arrCyan" markerWidth="8" markerHeight="8" refX="5" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L7,3 z" fill="#00f2fe" />
+    </marker>
+    <marker id="arrPurple" markerWidth="8" markerHeight="8" refX="5" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L7,3 z" fill="#c084fc" />
+    </marker>
+    <marker id="arrGreen" markerWidth="8" markerHeight="8" refX="5" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L7,3 z" fill="#10b981" />
+    </marker>
+    <marker id="arrAmber" markerWidth="8" markerHeight="8" refX="5" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L7,3 z" fill="#f59e0b" />
+    </marker>
+  </defs>
 
-    %% Single-Agent Loop
-    AgentCore --> ReAct
-    ReAct --> LLMGateway
-    LLMGateway --> DualPassScan
+  <!-- Background -->
+  <rect width="1600" height="1150" fill="url(#bgGrad)" />
 
-    %% Tool Call Guardrail Loop
-    ReAct -->|Function Call Intent| PreToolGuard
-    PreToolGuard -->|Sanitized Arguments| ToolExecution
-    ToolExecution -->|Raw Execution Results| PostToolGuard
-    PostToolGuard -->|Safe Observations| ReAct
+  <!-- Grid Pattern -->
+  <g stroke="rgba(255,255,255,0.02)" stroke-width="1">
+    <path d="M 0,100 L 1600,100 M 0,200 L 1600,200 M 0,300 L 1600,300 M 0,400 L 1600,400 M 0,500 L 1600,500 M 0,600 L 1600,600 M 0,700 L 1600,700 M 0,800 L 1600,800 M 0,900 L 1600,900 M 0,1000 L 1600,1000" />
+    <path d="M 100,0 L 100,1150 M 200,0 L 200,1150 M 300,0 L 300,1150 M 400,0 L 400,1150 M 500,0 L 500,1150 M 600,0 L 600,1150 M 700,0 L 700,1150 M 800,0 L 800,1150 M 900,0 L 900,1150 M 1000,0 L 1000,1150 M 1100,0 L 1100,1150 M 1200,0 L 1200,1150 M 1300,0 L 1300,1150 M 1400,0 L 1400,1150 M 1500,0 L 1500,1150" />
+  </g>
 
-    %% Multi-Agent Loop
-    Supervisor --> A2ABus
-    A2ABus <-->|RBAC Filtered Messages| WorkerClinical
-    A2ABus <-->|RBAC Filtered Messages| WorkerBilling
-    A2ABus <-->|Zero-PII Filtered Messages| WorkerPublic
-    WorkerClinical -->|Sub-task Result| A2ABus
-    WorkerBilling -->|Sub-task Result| A2ABus
-    WorkerPublic -->|Sub-task Result| A2ABus
-    A2ABus -->|Aggregated Safe Context| Supervisor
-    Supervisor --> DualPassScan
+  <!-- ==================== HEADER BAR ==================== -->
+  <g transform="translate(50, 25)">
+    <rect width="1500" height="70" rx="14" fill="#0d1430" stroke="rgba(0, 242, 254, 0.4)" stroke-width="1.2" />
+    <circle cx="45" cy="35" r="20" fill="url(#cyanGrad)" />
+    <!-- Shield Logo Icon inside circle -->
+    <path d="M 45,21 L 57,26 L 57,35 C 57,43 45,48 45,48 C 45,48 33,43 33,35 L 33,26 Z" fill="#060914" />
+    <path d="M 45,24 L 54,28 L 54,34 C 54,40 45,44 45,44 C 45,44 36,40 36,34 L 36,28 Z" fill="#00f2fe" opacity="0.6" />
+    <text x="80" y="36" font-family="'Outfit', sans-serif" font-size="22" font-weight="800" fill="#ffffff">GuardIAn — End-to-End System Architecture</text>
+    <text x="80" y="55" font-family="'JetBrains Mono', monospace" font-size="12" fill="#00f2fe">ENTERPRISE TOPOLOGY: COMPLIANCE CORE · TOOL CALL ENCLAVE · MULTI-AGENT MESH · DATA &amp; CONTROL PLANES</text>
+    
+    <!-- Legend Badges -->
+    <g transform="translate(1080, 20)">
+      <circle cx="10" cy="15" r="5" fill="#00f2fe" />
+      <text x="22" y="19" font-family="'JetBrains Mono', monospace" font-size="11" fill="#94a3b8">Data Plane</text>
+      <circle cx="110" cy="15" r="5" fill="#a855f7" />
+      <text x="122" y="19" font-family="'JetBrains Mono', monospace" font-size="11" fill="#94a3b8">Agent Plane</text>
+      <circle cx="210" cy="15" r="5" fill="#10b981" />
+      <text x="222" y="19" font-family="'JetBrains Mono', monospace" font-size="11" fill="#94a3b8">Control Plane</text>
+      <circle cx="310" cy="15" r="5" fill="#f59e0b" />
+      <text x="322" y="19" font-family="'JetBrains Mono', monospace" font-size="11" fill="#94a3b8">Tool Enclave</text>
+    </g>
+  </g>
 
-    %% Egress Pipeline
-    DualPassScan --> ReverseVault
-    ReverseVault --> SSEBuffer
-    SSEBuffer --> FinalDelivery
-    FinalDelivery -->|Safe Response (Zero Leaks)| ClientTier
+  <!-- ==================== TIER 1: CLIENT APPLICATIONS (TOP LEFT) ==================== -->
+  <g transform="translate(50, 115)">
+    <!-- Boundary Box -->
+    <rect width="280" height="230" rx="14" fill="url(#tierClient)" stroke="rgba(255,255,255,0.15)" stroke-width="1.2" stroke-dasharray="6,4" />
+    <rect x="0" y="0" width="280" height="32" rx="14" fill="rgba(255,255,255,0.06)" />
+    <text x="15" y="22" font-family="'Outfit', sans-serif" font-size="13" font-weight="700" fill="#cbd5e1">1. CLIENT &amp; INGESTION TIER</text>
 
-    %% Telemetry & Control Plane Links
-    Dedupe -.->|Breach Telemetry| TrustScore
-    FinalDelivery -.->|Request Counts| EUS
-    TrustScore --> SSEPush
-    EUS --> SSEPush
-    AuditDB --> SSEPush
-    SSEPush --> AdminDashboard
+    <!-- Node 1: Web / Single Page App -->
+    <g transform="translate(15, 45)">
+      <rect width="250" height="48" rx="8" fill="#1e293b" stroke="rgba(56, 189, 248, 0.4)" stroke-width="1" />
+      <rect x="10" y="12" width="24" height="24" rx="4" fill="#0284c7" />
+      <text x="22" y="28" font-family="'JetBrains Mono', monospace" font-size="11" fill="#ffffff" text-anchor="middle">&lt;&gt;</text>
+      <text x="44" y="27" font-family="'Outfit', sans-serif" font-size="12" font-weight="700" fill="#f8fafc">Enterprise Web Apps</text>
+      <text x="44" y="40" font-family="'JetBrains Mono', monospace" font-size="9" fill="#94a3b8">React Dashboard · HTTPS Client</text>
+    </g>
+
+    <!-- Node 2: Developer IDE / AI Tooling -->
+    <g transform="translate(15, 102)">
+      <rect width="250" height="48" rx="8" fill="#1e293b" stroke="rgba(168, 85, 247, 0.4)" stroke-width="1" />
+      <rect x="10" y="12" width="24" height="24" rx="4" fill="#7c3aed" />
+      <text x="22" y="28" font-family="'JetBrains Mono', monospace" font-size="11" fill="#ffffff" text-anchor="middle">⚡</text>
+      <text x="44" y="27" font-family="'Outfit', sans-serif" font-size="12" font-weight="700" fill="#f8fafc">Agentic IDEs &amp; Extensions</text>
+      <text x="44" y="40" font-family="'JetBrains Mono', monospace" font-size="9" fill="#94a3b8">Cursor · Cline · Open WebUI · SDKs</text>
+    </g>
+
+    <!-- Node 3: Upstream Microservices -->
+    <g transform="translate(15, 160)">
+      <rect width="250" height="48" rx="8" fill="#1e293b" stroke="rgba(16, 185, 129, 0.4)" stroke-width="1" />
+      <rect x="10" y="12" width="24" height="24" rx="4" fill="#059669" />
+      <text x="22" y="28" font-family="'JetBrains Mono', monospace" font-size="11" fill="#ffffff" text-anchor="middle">⚙️</text>
+      <text x="44" y="27" font-family="'Outfit', sans-serif" font-size="12" font-weight="700" fill="#f8fafc">Enterprise Pipelines</text>
+      <text x="44" y="40" font-family="'JetBrains Mono', monospace" font-size="9" fill="#94a3b8">LangChain · LlamaIndex · REST APIs</text>
+    </g>
+  </g>
+
+  <!-- ==================== TIER 2: INGRESS GATEWAY & PROXY (TOP CENTER-LEFT) ==================== -->
+  <g transform="translate(370, 115)">
+    <rect width="320" height="230" rx="14" fill="url(#tierGateway)" stroke="rgba(0, 242, 254, 0.35)" stroke-width="1.2" />
+    <rect x="0" y="0" width="320" height="32" rx="14" fill="rgba(0, 242, 254, 0.1)" />
+    <text x="15" y="22" font-family="'Outfit', sans-serif" font-size="13" font-weight="700" fill="#00f2fe">2. PROXY GATEWAY &amp; SESSION ROUTER</text>
+
+    <!-- Gateway Router Node -->
+    <g transform="translate(15, 45)">
+      <rect width="290" height="75" rx="10" fill="#07132e" stroke="rgba(0, 242, 254, 0.4)" stroke-width="1" />
+      <text x="15" y="24" font-family="'Outfit', sans-serif" font-size="13" font-weight="700" fill="#ffffff">Reverse Proxy Ingress Engine</text>
+      <text x="15" y="42" font-family="'JetBrains Mono', monospace" font-size="10" fill="#00f2fe">PORT :8000 · FastAPI + Uvicorn ASGI</text>
+      <text x="15" y="58" font-family="'JetBrains Mono', monospace" font-size="9.5" fill="#94a3b8">Route: /proxy/{user_uuid}/v1/chat/completions</text>
+    </g>
+
+    <!-- Middleware Pipeline Stack -->
+    <g transform="translate(15, 130)">
+      <rect width="290" height="85" rx="10" fill="#040b1e" stroke="rgba(255,255,255,0.08)" />
+      <text x="15" y="22" font-family="'Outfit', sans-serif" font-size="11" font-weight="700" fill="#cbd5e1">Pre-Routing Middleware Stack</text>
+      
+      <rect x="12" y="32" width="80" height="24" rx="4" fill="#0f1f42" stroke="rgba(0, 242, 254, 0.3)" />
+      <text x="52" y="48" font-family="'JetBrains Mono', monospace" font-size="9" fill="#00f2fe" text-anchor="middle">Auth / Clerk</text>
+
+      <rect x="100" y="32" width="85" height="24" rx="4" fill="#0f1f42" stroke="rgba(168, 85, 247, 0.3)" />
+      <text x="142" y="48" font-family="'JetBrains Mono', monospace" font-size="9" fill="#c084fc" text-anchor="middle">Session Mgr</text>
+
+      <rect x="193" y="32" width="85" height="24" rx="4" fill="#0f1f42" stroke="rgba(16, 185, 129, 0.3)" />
+      <text x="235" y="48" font-family="'JetBrains Mono', monospace" font-size="9" fill="#34d399" text-anchor="middle">Mode Router</text>
+
+      <text x="15" y="73" font-family="'JetBrains Mono', monospace" font-size="9" fill="#94a3b8">Dynamic Action Mode: REDACT · BLOCK · HASH · LOG</text>
+    </g>
+  </g>
+
+  <!-- Connectors from Client to Gateway -->
+  <path d="M 330,175 L 370,175" stroke="#00f2fe" stroke-width="2.5" marker-end="url(#arrCyan)" />
+  <rect x="335" y="155" width="30" height="16" rx="4" fill="#07132e" />
+  <text x="350" y="167" font-family="'JetBrains Mono', monospace" font-size="8" fill="#00f2fe" text-anchor="middle">HTTPS</text>
+
+  <!-- ==================== TIER 3: DUAL-TIER COMPLIANCE & INSPECTION CORE (TOP RIGHT) ==================== -->
+  <g transform="translate(730, 115)">
+    <rect width="820" height="230" rx="14" fill="url(#tierGuardrail)" stroke="rgba(16, 185, 129, 0.35)" stroke-width="1.2" />
+    <rect x="0" y="0" width="820" height="32" rx="14" fill="rgba(16, 185, 129, 0.1)" />
+    <text x="15" y="22" font-family="'Outfit', sans-serif" font-size="13" font-weight="700" fill="#34d399">3. DUAL-TIER COMPLIANCE INSPECTION ENGINE (HIPAA + DPDP)</text>
+
+    <!-- Inspection Sub-Unit A: Tier 0 Fast-Path -->
+    <g transform="translate(20, 45)">
+      <rect width="365" height="165" rx="10" fill="#0b122b" stroke="rgba(16, 185, 129, 0.4)" stroke-width="1.2" />
+      <rect x="15" y="12" width="110" height="22" rx="4" fill="rgba(16, 185, 129, 0.15)" />
+      <text x="70" y="27" font-family="'JetBrains Mono', monospace" font-size="10" font-weight="700" fill="#34d399" text-anchor="middle">TIER 0 FAST-PATH</text>
+      <text x="140" y="27" font-family="'JetBrains Mono', monospace" font-size="10" fill="#10b981">⚡ &lt; 0.2 ms Latency</text>
+      
+      <path d="M 15,42 L 350,42" stroke="rgba(255,255,255,0.08)" stroke-width="1" />
+      <text x="15" y="58" font-family="'JetBrains Mono', monospace" font-size="10" fill="#f8fafc">• Verhoeff Algorithm (Aadhaar 12-digit UID)</text>
+      <text x="15" y="74" font-family="'JetBrains Mono', monospace" font-size="10" fill="#f8fafc">• ITD Structural Regex (PAN: [A-Z]{5}\d{4}[A-Z])</text>
+      <text x="15" y="90" font-family="'JetBrains Mono', monospace" font-size="10" fill="#f8fafc">• Luhn Checksum (Credit / Debit Cards)</text>
+      <text x="15" y="106" font-family="'JetBrains Mono', monospace" font-size="10" fill="#f8fafc">• VPA Syntax Engine (@okaxis, @okhdfc, @paytm)</text>
+      <text x="15" y="122" font-family="'JetBrains Mono', monospace" font-size="10" fill="#f8fafc">• HIPAA Safe Harbor Structured Keys (SSN, MRN)</text>
+      <text x="15" y="138" font-family="'JetBrains Mono', monospace" font-size="10" fill="#f8fafc">• Context-Anchored Names (Dr. [Name], Patient: [Name])</text>
+      <text x="15" y="154" font-family="'JetBrains Mono', monospace" font-size="9" fill="#10b981">✓ 100% Deterministic Regex &amp; Algorithm Gating</text>
+    </g>
+
+    <!-- Inspection Sub-Unit B: Tier 1 Neural SLM -->
+    <g transform="translate(415, 45)">
+      <rect width="385" height="165" rx="10" fill="#0b122b" stroke="rgba(0, 242, 254, 0.4)" stroke-width="1.2" />
+      <rect x="15" y="12" width="120" height="22" rx="4" fill="rgba(0, 242, 254, 0.15)" />
+      <text x="75" y="27" font-family="'JetBrains Mono', monospace" font-size="10" font-weight="700" fill="#00f2fe" text-anchor="middle">TIER 1 NEURAL SLM</text>
+      <text x="145" y="27" font-family="'JetBrains Mono', monospace" font-size="10" fill="#00f2fe">🎯 ~40 ms Neural Inference</text>
+
+      <path d="M 15,42 L 370,42" stroke="rgba(255,255,255,0.08)" stroke-width="1" />
+      <text x="15" y="58" font-family="'JetBrains Mono', monospace" font-size="10" fill="#f8fafc">• GLiNER 152M Zero-Shot Bidirectional Encoder</text>
+      <text x="15" y="74" font-family="'JetBrains Mono', monospace" font-size="10" fill="#f8fafc">• Bare / Unanchored Names (Sarah Connor, Rahul)</text>
+      <text x="15" y="90" font-family="'JetBrains Mono', monospace" font-size="10" fill="#f8fafc">• Sub-city Localities (Indiranagar, Anna Nagar)</text>
+      <text x="15" y="106" font-family="'JetBrains Mono', monospace" font-size="10" fill="#f8fafc">• Unstructured Salary &amp; CTC (INR 24 LPA, ₹18.5 LPA)</text>
+      <text x="15" y="122" font-family="'JetBrains Mono', monospace" font-size="10" fill="#38bdf8">• Tuned Threshold: 0.52 (High-Precision F1)</text>
+      <text x="15" y="138" font-family="'JetBrains Mono', monospace" font-size="10" fill="#38bdf8">• GENERIC_NOUN_STOP Filter (Drops role nouns)</text>
+      <text x="15" y="154" font-family="'JetBrains Mono', monospace" font-size="9" fill="#10b981">✓ Prescription Drugs Preserved (0% False Alarms)</text>
+    </g>
+  </g>
+
+  <!-- Connectors from Gateway to Compliance -->
+  <path d="M 690,175 L 730,175" stroke="#00f2fe" stroke-width="2.5" marker-end="url(#arrCyan)" />
+
+  <!-- ==================== TIER 4: SECURITY ENCLAVE, VAULT & STATE (MIDDLE LEFT) ==================== -->
+  <g transform="translate(50, 380)">
+    <rect width="280" height="340" rx="14" fill="url(#tierStorage)" stroke="rgba(14, 165, 233, 0.35)" stroke-width="1.2" />
+    <rect x="0" y="0" width="280" height="32" rx="14" fill="rgba(14, 165, 233, 0.1)" />
+    <text x="15" y="22" font-family="'Outfit', sans-serif" font-size="13" font-weight="700" fill="#38bdf8">4. STATE &amp; CRYPTOGRAPHIC VAULT</text>
+
+    <!-- Isometric Database Cylinder: PIISessionVault -->
+    <g transform="translate(25, 45)">
+      <!-- Cylinder Body -->
+      <path d="M 20,20 L 20,60 C 20,72 80,72 80,60 L 80,20 Z" fill="url(#vaultGrad)" />
+      <ellipse cx="50" cy="20" rx="30" ry="12" fill="url(#vaultTop)" />
+      <ellipse cx="50" cy="40" rx="30" ry="8" fill="none" stroke="rgba(255,255,255,0.3)" stroke-width="1" />
+      <ellipse cx="50" cy="60" rx="30" ry="10" fill="none" stroke="rgba(255,255,255,0.4)" stroke-width="1" />
+
+      <text x="95" y="30" font-family="'Outfit', sans-serif" font-size="13" font-weight="700" fill="#c084fc">PIISessionVault</text>
+      <text x="95" y="46" font-family="'JetBrains Mono', monospace" font-size="10" fill="#94a3b8">Cryptographic Token Store</text>
+      <text x="95" y="60" font-family="'JetBrains Mono', monospace" font-size="9" fill="#10b981">In-Memory / Zero Disk Persist</text>
+      <text x="95" y="74" font-family="'JetBrains Mono', monospace" font-size="9" fill="#00f2fe">Deterministic HMAC-SHA256</text>
+    </g>
+
+    <path d="M 15,135 L 265,135" stroke="rgba(255,255,255,0.08)" stroke-width="1" />
+
+    <!-- Isometric Database Cylinder: Audit SQLite/Postgres Store -->
+    <g transform="translate(25, 145)">
+      <path d="M 20,20 L 20,60 C 20,72 80,72 80,60 L 80,20 Z" fill="url(#dbGrad)" />
+      <ellipse cx="50" cy="20" rx="30" ry="12" fill="url(#dbTop)" />
+      <ellipse cx="50" cy="40" rx="30" ry="8" fill="none" stroke="rgba(255,255,255,0.3)" stroke-width="1" />
+      <ellipse cx="50" cy="60" rx="30" ry="10" fill="none" stroke="rgba(255,255,255,0.4)" stroke-width="1" />
+
+      <text x="95" y="30" font-family="'Outfit', sans-serif" font-size="13" font-weight="700" fill="#38bdf8">Immutable Audit Log</text>
+      <text x="95" y="46" font-family="'JetBrains Mono', monospace" font-size="10" fill="#94a3b8">SQLite WAL / JSON Store</text>
+      <text x="95" y="60" font-family="'JetBrains Mono', monospace" font-size="9" fill="#94a3b8">Append-Only Forensic Ledger</text>
+      <text x="95" y="74" font-family="'JetBrains Mono', monospace" font-size="9" fill="#34d399">SOC2 &amp; HIPAA Audit Ready</text>
+    </g>
+
+    <path d="M 15,235 L 265,235" stroke="rgba(255,255,255,0.08)" stroke-width="1" />
+
+    <!-- Token Mapping Callout -->
+    <g transform="translate(15, 245)">
+      <rect width="250" height="75" rx="8" fill="#06121f" stroke="rgba(56, 189, 248, 0.3)" stroke-width="1" />
+      <text x="12" y="20" font-family="'Outfit', sans-serif" font-size="11" font-weight="700" fill="#38bdf8">Token Isolation Guarantee:</text>
+      <text x="12" y="36" font-family="'JetBrains Mono', monospace" font-size="9" fill="#cbd5e1">Prompt PII ➔ [HASH:7a8b9c0d]</text>
+      <text x="12" y="52" font-family="'JetBrains Mono', monospace" font-size="9" fill="#94a3b8">Downstream LLMs see ZERO plain text.</text>
+      <text x="12" y="66" font-family="'JetBrains Mono', monospace" font-size="9" fill="#10b981">Session terminates ➔ Keys purged.</text>
+    </g>
+  </g>
+
+  <!-- ==================== TIER 5: AGENT RUNTIME & REASONING ENCLAVE (MIDDLE CENTER-RIGHT) ==================== -->
+  <g transform="translate(370, 380)">
+    <rect width="730" height="340" rx="14" fill="url(#tierAgent)" stroke="rgba(168, 85, 247, 0.35)" stroke-width="1.2" />
+    <rect x="0" y="0" width="730" height="32" rx="14" fill="rgba(168, 85, 247, 0.1)" />
+    <text x="15" y="22" font-family="'Outfit', sans-serif" font-size="13" font-weight="700" fill="#c084fc">5. AUTONOMOUS AGENT ORCHESTRATION ENCLAVE (SINGLE &amp; MULTI-AGENT)</text>
+
+    <!-- Single Agent Architecture Box -->
+    <g transform="translate(20, 45)">
+      <rect width="330" height="275" rx="10" fill="#0e0a24" stroke="rgba(168, 85, 247, 0.3)" stroke-width="1" />
+      <text x="15" y="22" font-family="'Outfit', sans-serif" font-size="12" font-weight="700" fill="#ffffff">A. Single Agent Execution Loop</text>
+      <text x="15" y="36" font-family="'JetBrains Mono', monospace" font-size="9.5" fill="#a855f7">ReAct Pattern (Thought ➔ Action ➔ Observation)</text>
+
+      <g transform="translate(15, 48)">
+        <rect width="300" height="45" rx="6" fill="#171038" stroke="rgba(0, 242, 254, 0.3)" />
+        <text x="15" y="20" font-family="'Outfit', sans-serif" font-size="11" font-weight="700" fill="#00f2fe">Step 1: Ingest Masked Context</text>
+        <text x="15" y="34" font-family="'JetBrains Mono', monospace" font-size="9" fill="#94a3b8">Reads safe hashes [HASH:id], no data leak</text>
+      </g>
+
+      <g transform="translate(15, 102)">
+        <rect width="300" height="45" rx="6" fill="#171038" stroke="rgba(168, 85, 247, 0.3)" />
+        <text x="15" y="20" font-family="'Outfit', sans-serif" font-size="11" font-weight="700" fill="#c084fc">Step 2: Internal ReAct Planning</text>
+        <text x="15" y="34" font-family="'JetBrains Mono', monospace" font-size="9" fill="#94a3b8">Prevents prompt injection &amp; jailbreaks</text>
+      </g>
+
+      <g transform="translate(15, 156)">
+        <rect width="300" height="45" rx="6" fill="#171038" stroke="rgba(245, 158, 11, 0.3)" />
+        <text x="15" y="20" font-family="'Outfit', sans-serif" font-size="11" font-weight="700" fill="#f59e0b">Step 3: Tool Dispatch Guardrail</text>
+        <text x="15" y="34" font-family="'JetBrains Mono', monospace" font-size="9" fill="#94a3b8">Argument inspection prior to external calls</text>
+      </g>
+
+      <g transform="translate(15, 210)">
+        <rect width="300" height="50" rx="6" fill="#0a1d1d" stroke="rgba(16, 185, 129, 0.3)" />
+        <text x="15" y="20" font-family="'Outfit', sans-serif" font-size="11" font-weight="700" fill="#10b981">Step 4: LLM Generation Gateway</text>
+        <text x="15" y="35" font-family="'JetBrains Mono', monospace" font-size="9" fill="#94a3b8">OpenAI / Claude / Gemini Base APIs</text>
+      </g>
+    </g>
+
+    <!-- Multi-Agent Mesh Box -->
+    <g transform="translate(370, 45)">
+      <rect width="340" height="275" rx="10" fill="#0e0a24" stroke="rgba(168, 85, 247, 0.3)" stroke-width="1" />
+      <text x="15" y="22" font-family="'Outfit', sans-serif" font-size="12" font-weight="700" fill="#ffffff">B. Multi-Agent Inter-Agent Mesh (A2A)</text>
+      <text x="15" y="36" font-family="'JetBrains Mono', monospace" font-size="9.5" fill="#a855f7">Zero-Trust Role-Based Separation</text>
+
+      <!-- Orchestrator / Supervisor -->
+      <g transform="translate(20, 48)">
+        <rect width="300" height="38" rx="6" fill="#1c1042" stroke="#a855f7" stroke-width="1" />
+        <circle cx="20" cy="19" r="8" fill="#a855f7" />
+        <text x="20" y="23" font-family="'JetBrains Mono', monospace" font-size="10" fill="#ffffff" text-anchor="middle">S</text>
+        <text x="36" y="23" font-family="'Outfit', sans-serif" font-size="11" font-weight="700" fill="#ffffff">Supervisor / Orchestrator Agent</text>
+      </g>
+
+      <!-- Inter-Agent Bus -->
+      <g transform="translate(20, 96)">
+        <rect width="300" height="30" rx="6" fill="#060919" stroke="url(#cyanGrad)" stroke-width="1.2" />
+        <text x="150" y="20" font-family="'JetBrains Mono', monospace" font-size="9.5" font-weight="700" fill="#00f2fe" text-anchor="middle">🔒 INTER-AGENT GUARDRAIL BUS (A2A Gateway)</text>
+      </g>
+
+      <!-- Worker Agents -->
+      <g transform="translate(20, 136)">
+        <!-- Worker 1 -->
+        <rect x="0" y="0" width="95" height="58" rx="6" fill="#101938" stroke="#3b82f6" />
+        <text x="47" y="18" font-family="'Outfit', sans-serif" font-size="10" font-weight="700" fill="#60a5fa" text-anchor="middle">Agent Alpha</text>
+        <text x="47" y="32" font-family="'JetBrains Mono', monospace" font-size="8" fill="#94a3b8" text-anchor="middle">Clinical Spec</text>
+        <text x="47" y="46" font-family="'JetBrains Mono', monospace" font-size="7.5" fill="#10b981" text-anchor="middle">[HIPAA Perm]</text>
+
+        <!-- Worker 2 -->
+        <rect x="103" y="0" width="95" height="58" rx="6" fill="#101938" stroke="#f59e0b" />
+        <text x="150" y="18" font-family="'Outfit', sans-serif" font-size="10" font-weight="700" fill="#f59e0b" text-anchor="middle">Agent Beta</text>
+        <text x="150" y="32" font-family="'JetBrains Mono', monospace" font-size="8" fill="#94a3b8" text-anchor="middle">Financial Spec</text>
+        <text x="150" y="46" font-family="'JetBrains Mono', monospace" font-size="7.5" fill="#f59e0b" text-anchor="middle">[DPDP Perm]</text>
+
+        <!-- Worker 3 -->
+        <rect x="205" y="0" width="95" height="58" rx="6" fill="#101938" stroke="#10b981" />
+        <text x="252" y="18" font-family="'Outfit', sans-serif" font-size="10" font-weight="700" fill="#10b981" text-anchor="middle">Agent Gamma</text>
+        <text x="252" y="32" font-family="'JetBrains Mono', monospace" font-size="8" fill="#94a3b8" text-anchor="middle">Public Assistant</text>
+        <text x="252" y="46" font-family="'JetBrains Mono', monospace" font-size="7.5" fill="#ef4444" text-anchor="middle">[Zero PII]</text>
+      </g>
+
+      <g transform="translate(20, 204)">
+        <rect width="300" height="58" rx="6" fill="#080d24" stroke="rgba(168, 85, 247, 0.2)" />
+        <text x="12" y="18" font-family="'Outfit', sans-serif" font-size="10" font-weight="700" fill="#c084fc">Cross-Contamination Firewall:</text>
+        <text x="12" y="32" font-family="'JetBrains Mono', monospace" font-size="8.5" fill="#94a3b8">Alpha cannot pass MRN / clinical notes to Gamma.</text>
+        <text x="12" y="46" font-family="'JetBrains Mono', monospace" font-size="8.5" fill="#10b981">Every inter-agent message scrubbed by RBAC.</text>
+      </g>
+    </g>
+  </g>
+
+  <!-- Connectors from Compliance to Agent Runtime -->
+  <path d="M 850,345 L 850,380" stroke="#a855f7" stroke-width="2.5" marker-end="url(#arrPurple)" />
+  <rect x="805" y="352" width="90" height="18" rx="4" fill="#0d1430" stroke="#a855f7" stroke-width="1" />
+  <text x="850" y="365" font-family="'JetBrains Mono', monospace" font-size="8.5" fill="#c084fc" text-anchor="middle">Safe Context In</text>
+
+  <!-- Connector from Vault to Agent (Mapping sync) -->
+  <path d="M 330,450 L 370,450" stroke="#38bdf8" stroke-width="2" marker-end="url(#arrCyan)" />
+
+  <!-- ==================== TIER 6: TOOL CALL & FUNCTION EXECUTION ENCLAVE (MIDDLE RIGHT) ==================== -->
+  <g transform="translate(1130, 380)">
+    <rect width="420" height="340" rx="14" fill="url(#tierStorage)" stroke="rgba(245, 158, 11, 0.35)" stroke-width="1.2" />
+    <rect x="0" y="0" width="420" height="32" rx="14" fill="rgba(245, 158, 11, 0.1)" />
+    <text x="15" y="22" font-family="'Outfit', sans-serif" font-size="13" font-weight="700" fill="#f59e0b">6. TOOL CALL &amp; FUNCTION GUARDRAIL ENCLAVE</text>
+
+    <!-- Pre-Execution Tool Argument Inspector -->
+    <g transform="translate(20, 45)">
+      <rect width="380" height="70" rx="8" fill="#1c1606" stroke="rgba(245, 158, 11, 0.5)" stroke-width="1" />
+      <text x="15" y="22" font-family="'Outfit', sans-serif" font-size="11" font-weight="700" fill="#f59e0b">1. Pre-Execution Argument Guardrail</text>
+      <text x="15" y="38" font-family="'JetBrains Mono', monospace" font-size="9" fill="#94a3b8">Intercepts payload: { tool: "query_db", args: {...} }</text>
+      <text x="15" y="52" font-family="'JetBrains Mono', monospace" font-size="9" fill="#f8fafc">Blocks SSN / Credit Card exfiltration to 3rd party APIs</text>
+      <text x="15" y="64" font-family="'JetBrains Mono', monospace" font-size="8.5" fill="#10b981">Auto-tokenizes sensitive argument parameters</text>
+    </g>
+
+    <!-- Tool Execution Sandbox Nodes -->
+    <g transform="translate(20, 125)">
+      <rect width="380" height="85" rx="8" fill="#08101e" stroke="rgba(0, 242, 254, 0.25)" />
+      <text x="15" y="20" font-family="'Outfit', sans-serif" font-size="11" font-weight="700" fill="#00f2fe">2. Sandboxed Tool Execution Targets</text>
+      
+      <rect x="15" y="30" width="110" height="42" rx="6" fill="#0e1e3b" stroke="#0284c7" />
+      <text x="70" y="47" font-family="'Outfit', sans-serif" font-size="10" font-weight="700" fill="#ffffff" text-anchor="middle">SQL Database</text>
+      <text x="70" y="60" font-family="'JetBrains Mono', monospace" font-size="8" fill="#38bdf8" text-anchor="middle">Postgres / MySQL</text>
+
+      <rect x="135" y="30" width="110" height="42" rx="6" fill="#0e1e3b" stroke="#7c3aed" />
+      <text x="190" y="47" font-family="'Outfit', sans-serif" font-size="10" font-weight="700" fill="#ffffff" text-anchor="middle">Internal CRM</text>
+      <text x="190" y="60" font-family="'JetBrains Mono', monospace" font-size="8" fill="#c084fc" text-anchor="middle">Salesforce / Epic</text>
+
+      <rect x="255" y="30" width="110" height="42" rx="6" fill="#0e1e3b" stroke="#10b981" />
+      <text x="310" y="47" font-family="'Outfit', sans-serif" font-size="10" font-weight="700" fill="#ffffff" text-anchor="middle">External Web</text>
+      <text x="310" y="60" font-family="'JetBrains Mono', monospace" font-size="8" fill="#34d399" text-anchor="middle">Search / APIs</text>
+    </g>
+
+    <!-- Post-Execution Tool Return Scrubbing -->
+    <g transform="translate(20, 220)">
+      <rect width="380" height="100" rx="8" fill="#1c1606" stroke="rgba(16, 185, 129, 0.5)" stroke-width="1" />
+      <text x="15" y="22" font-family="'Outfit', sans-serif" font-size="11" font-weight="700" fill="#10b981">3. Post-Execution Result Scrubbing</text>
+      <text x="15" y="38" font-family="'JetBrains Mono', monospace" font-size="9" fill="#94a3b8">Sanitizes raw rows returned by databases before agent injection</text>
+      <text x="15" y="52" font-family="'JetBrains Mono', monospace" font-size="9" fill="#f8fafc">• Prevents returned Aadhaar/SSN from polluting context</text>
+      <text x="15" y="66" font-family="'JetBrains Mono', monospace" font-size="9" fill="#f8fafc">• Blocks indirect prompt injection hidden in web search data</text>
+      <text x="15" y="80" font-family="'JetBrains Mono', monospace" font-size="8.5" fill="#00f2fe">✓ Sanitized observations fed safely into Agent reasoning loop</text>
+    </g>
+  </g>
+
+  <!-- Bidirectional connectors between Agent Enclave and Tool Enclave -->
+  <path d="M 1100,450 L 1130,450" stroke="#f59e0b" stroke-width="2" marker-end="url(#arrAmber)" />
+  <path d="M 1130,590 L 1100,590" stroke="#10b981" stroke-width="2" marker-end="url(#arrGreen)" />
+
+  <!-- ==================== TIER 7: EGRESS SANITIZATION & SSE STREAMING (BOTTOM LEFT & CENTER) ==================== -->
+  <g transform="translate(50, 750)">
+    <rect width="1050" height="350" rx="14" fill="url(#tierGateway)" stroke="rgba(0, 242, 254, 0.35)" stroke-width="1.2" />
+    <rect x="0" y="0" width="1050" height="32" rx="14" fill="rgba(0, 242, 254, 0.1)" />
+    <text x="15" y="22" font-family="'Outfit', sans-serif" font-size="13" font-weight="700" fill="#00f2fe">7. EGRESS SANITIZATION, REVERSE DE-ANONYMIZATION &amp; SSE STREAMING</text>
+
+    <!-- Component A: Dual-Pass Generation Inspection -->
+    <g transform="translate(25, 48)">
+      <rect width="310" height="140" rx="10" fill="#07132e" stroke="rgba(0, 242, 254, 0.4)" stroke-width="1" />
+      <text x="15" y="24" font-family="'Outfit', sans-serif" font-size="12" font-weight="700" fill="#00f2fe">A. Dual-Pass Model Output Scan</text>
+      <text x="15" y="42" font-family="'JetBrains Mono', monospace" font-size="9.5" fill="#94a3b8">Full response scan before client delivery</text>
+      
+      <rect x="15" y="52" width="280" height="45" rx="6" fill="#040b1e" />
+      <text x="25" y="70" font-family="'JetBrains Mono', monospace" font-size="9" fill="#f8fafc">Catches model hallucinations of real PII</text>
+      <text x="25" y="85" font-family="'JetBrains Mono', monospace" font-size="9" fill="#ef4444">Zero accidental leaks in generated answers</text>
+
+      <text x="15" y="115" font-family="'JetBrains Mono', monospace" font-size="9" fill="#10b981">Dual validation across HIPAA &amp; DPDP rules</text>
+      <text x="15" y="128" font-family="'JetBrains Mono', monospace" font-size="8.5" fill="#38bdf8">Evaluates both structured regex &amp; GLiNER</text>
+    </g>
+
+    <!-- Component B: Reverse Cryptographic De-anonymizer -->
+    <g transform="translate(365, 48)">
+      <rect width="320" height="140" rx="10" fill="#07132e" stroke="rgba(168, 85, 247, 0.4)" stroke-width="1" />
+      <text x="15" y="24" font-family="'Outfit', sans-serif" font-size="12" font-weight="700" fill="#c084fc">B. Reverse De-anonymization Vault</text>
+      <text x="15" y="42" font-family="'JetBrains Mono', monospace" font-size="9.5" fill="#94a3b8">Authorized session token restoration</text>
+
+      <rect x="15" y="52" width="290" height="45" rx="6" fill="#040b1e" />
+      <text x="25" y="70" font-family="'JetBrains Mono', monospace" font-size="9" fill="#f8fafc">[HASH:7a8b9c0d] ➔ Restored Plaintext</text>
+      <text x="25" y="85" font-family="'JetBrains Mono', monospace" font-size="8.5" fill="#a855f7">Authorized client sees natural fluent response</text>
+
+      <text x="15" y="115" font-family="'JetBrains Mono', monospace" font-size="9" fill="#10b981">Scoped to active session memory only</text>
+      <text x="15" y="128" font-family="'JetBrains Mono', monospace" font-size="8.5" fill="#cbd5e1">Third-party LLMs never touch plain identity</text>
+    </g>
+
+    <!-- Component C: Sliding Window Streaming SSE Buffer -->
+    <g transform="translate(715, 48)">
+      <rect width="310" height="140" rx="10" fill="#07132e" stroke="rgba(16, 185, 129, 0.4)" stroke-width="1" />
+      <text x="15" y="24" font-family="'Outfit', sans-serif" font-size="12" font-weight="700" fill="#34d399">C. Streaming Token Buffer (SSE)</text>
+      <text x="15" y="42" font-family="'JetBrains Mono', monospace" font-size="9.5" fill="#94a3b8">Real-time token-by-token sliding window</text>
+
+      <rect x="15" y="52" width="280" height="45" rx="6" fill="#040b1e" />
+      <text x="25" y="70" font-family="'JetBrains Mono', monospace" font-size="9" fill="#f8fafc">64-token sliding window boundary buffer</text>
+      <text x="25" y="85" font-family="'JetBrains Mono', monospace" font-size="8.5" fill="#34d399">Prevents SSN/PAN split across streamed chunks</text>
+
+      <text x="15" y="115" font-family="'JetBrains Mono', monospace" font-size="9" fill="#10b981">Zero buffering latency penalty for users</text>
+      <text x="15" y="128" font-family="'JetBrains Mono', monospace" font-size="8.5" fill="#00f2fe">Compatible with OpenAI streaming SDK protocol</text>
+    </g>
+
+    <!-- Outbound Delivery Pipeline -->
+    <g transform="translate(25, 205)">
+      <rect width="1000" height="120" rx="10" fill="#050a1a" stroke="rgba(0, 242, 254, 0.25)" />
+      <text x="20" y="25" font-family="'Outfit', sans-serif" font-size="12" font-weight="700" fill="#00f2fe">Final Verified Egress Delivery Path ➔ Client Application</text>
+
+      <g transform="translate(20, 38)">
+        <rect width="220" height="42" rx="6" fill="#0b1736" stroke="#3b82f6" />
+        <text x="110" y="22" font-family="'Outfit', sans-serif" font-size="10" font-weight="700" fill="#60a5fa" text-anchor="middle">Clean Egress Payload</text>
+        <text x="110" y="34" font-family="'JetBrains Mono', monospace" font-size="8" fill="#94a3b8" text-anchor="middle">Zero PII / PHI Violations</text>
+
+        <path d="M 220,21 L 255,21" stroke="#00f2fe" stroke-width="2" marker-end="url(#arrCyan)" />
+
+        <rect x="260" y="0" width="220" height="42" rx="6" fill="#0b1736" stroke="#10b981" />
+        <text x="370" y="22" font-family="'Outfit', sans-serif" font-size="10" font-weight="700" fill="#34d399" text-anchor="middle">Audit Ledger Recorded</text>
+        <text x="370" y="34" font-family="'JetBrains Mono', monospace" font-size="8" fill="#94a3b8" text-anchor="middle">Request Tokens &amp; Latency</text>
+
+        <path d="M 480,21 L 515,21" stroke="#00f2fe" stroke-width="2" marker-end="url(#arrCyan)" />
+
+        <rect x="520" y="0" width="220" height="42" rx="6" fill="#0b1736" stroke="#a855f7" />
+        <text x="630" y="22" font-family="'Outfit', sans-serif" font-size="10" font-weight="700" fill="#c084fc" text-anchor="middle">Trust Scores Recalculated</text>
+        <text x="630" y="34" font-family="'JetBrains Mono', monospace" font-size="8" fill="#94a3b8" text-anchor="middle">ATS &amp; EUS Metrics Updated</text>
+
+        <path d="M 740,21 L 775,21" stroke="#00f2fe" stroke-width="2" marker-end="url(#arrCyan)" />
+
+        <rect x="780" y="0" width="200" height="42" rx="6" fill="#063229" stroke="#10b981" />
+        <text x="880" y="22" font-family="'Outfit', sans-serif" font-size="10" font-weight="700" fill="#10b981" text-anchor="middle">Delivered to Client</text>
+        <text x="880" y="34" font-family="'JetBrains Mono', monospace" font-size="8" fill="#ffffff" text-anchor="middle">HTTP 200 OK Response</text>
+      </g>
+      
+      <text x="20" y="105" font-family="'JetBrains Mono', monospace" font-size="9.5" fill="#10b981">✓ Complete Data Lifecycle Guarantee: Sensitive input protected at ingress, reasoned over safely by agents, and sealed at egress.</text>
+    </g>
+  </g>
+
+  <!-- Egress from Agent to Egress Tier -->
+  <path d="M 600,720 L 600,750" stroke="#00f2fe" stroke-width="2.5" marker-end="url(#arrCyan)" />
+
+  <!-- ==================== TIER 8: CONTROL PLANE, GOVERNANCE & METRICS (BOTTOM RIGHT) ==================== -->
+  <g transform="translate(1130, 750)">
+    <rect width="420" height="350" rx="14" fill="url(#tierGuardrail)" stroke="rgba(168, 85, 247, 0.35)" stroke-width="1.2" />
+    <rect x="0" y="0" width="420" height="32" rx="14" fill="rgba(168, 85, 247, 0.1)" />
+    <text x="15" y="22" font-family="'Outfit', sans-serif" font-size="13" font-weight="700" fill="#c084fc">8. CONTROL PLANE &amp; GOVERNANCE METRICS</text>
+
+    <!-- Authority-Trust Scoring Formula -->
+    <g transform="translate(20, 48)">
+      <rect width="380" height="70" rx="8" fill="#100b29" stroke="rgba(168, 85, 247, 0.4)" stroke-width="1" />
+      <text x="15" y="20" font-family="'Outfit', sans-serif" font-size="11" font-weight="700" fill="#c084fc">Authority-Trust Score (ATS)</text>
+      <text x="15" y="36" font-family="'JetBrains Mono', monospace" font-size="9" fill="#f8fafc">ATS = 80 + StreakBonus - ViolationPenalty</text>
+      <text x="15" y="50" font-family="'JetBrains Mono', monospace" font-size="9" fill="#94a3b8">Tier 1: Trusted Operator (&gt;80) · Tier 2: Monitored · Tier 3: Blocked</text>
+      <text x="15" y="62" font-family="'JetBrains Mono', monospace" font-size="8.5" fill="#10b981">Dynamic privilege throttling for repeated breach attempts</text>
+    </g>
+
+    <!-- Effective-Use Score (EUS) -->
+    <g transform="translate(20, 126)">
+      <rect width="380" height="65" rx="8" fill="#081820" stroke="rgba(16, 185, 129, 0.4)" stroke-width="1" />
+      <text x="15" y="20" font-family="'Outfit', sans-serif" font-size="11" font-weight="700" fill="#10b981">Effective-Use Score (EUS)</text>
+      <text x="15" y="36" font-family="'JetBrains Mono', monospace" font-size="9" fill="#f8fafc">EUS = (Clean Requests / Total Requests) × 100</text>
+      <text x="15" y="50" font-family="'JetBrains Mono', monospace" font-size="9" fill="#94a3b8">Quantifies enterprise prompt hygiene across engineering teams</text>
+    </g>
+
+    <!-- Real-time Dashboard & Telemetry Stream -->
+    <g transform="translate(20, 200)">
+      <rect width="380" height="125" rx="8" fill="#07132e" stroke="rgba(0, 242, 254, 0.3)" />
+      <text x="15" y="22" font-family="'Outfit', sans-serif" font-size="11" font-weight="700" fill="#00f2fe">Real-Time Telemetry &amp; SSE Push</text>
+      <text x="15" y="38" font-family="'JetBrains Mono', monospace" font-size="9" fill="#94a3b8">Stream endpoint: /api/sessions/{id}/events</text>
+
+      <rect x="15" y="48" width="350" height="40" rx="6" fill="#040a1c" />
+      <text x="25" y="65" font-family="'JetBrains Mono', monospace" font-size="8.5" fill="#38bdf8">Event Stream: breach_alert · token_count · latency</text>
+      <text x="25" y="78" font-family="'JetBrains Mono', monospace" font-size="8.5" fill="#10b981">Instant dashboard sync without polling overhead</text>
+
+      <text x="15" y="105" font-family="'JetBrains Mono', monospace" font-size="9" fill="#cbd5e1">• SOC2 Type II automated compliance evidence export</text>
+      <text x="15" y="118" font-family="'JetBrains Mono', monospace" font-size="8.5" fill="#a855f7">✓ Ready for Enterprise Regulatory Inspection</text>
+    </g>
+  </g>
+
+  <!-- Connectors from Egress to Control Plane -->
+  <path d="M 1100,880 L 1130,880" stroke="#a855f7" stroke-width="2" marker-end="url(#arrPurple)" />
+</svg>
+
+</div>
+
+---
+
+## 2. System Architecture Blueprint (ASCII Schematic)
+
+```text
+========================================================================================================================
+                                             1. INGESTION & CLIENT TIER
+      [Enterprise Web Apps] (React)   |   [Agentic IDEs] (Cursor/Cline)   |   [SDKs] (LangChain / LlamaIndex / REST)
+========================================================================================================================
+                                                        |
+                                                        | HTTPS / WSS / JSON Payloads (:8000)
+                                                        v
+========================================================================================================================
+                                     2. API GATEWAY & REVERSE PROXY LAYER (:8000)
+     FastAPI ASGI Proxy Gateway  -->  Clerk JWT Auth & Rate Limiter  -->  Mode Router (REDACT | BLOCK | HASH | LOG_ONLY)
+========================================================================================================================
+                                                        |
+                            +---------------------------+---------------------------+
+                            |                                                       |
+                            v                                                       v
++-------------------------------------------------------+   +-------------------------------------------------------+
+|        3A. TIER 0 DETERMINISTIC FAST-PATH (<0.2ms)    |   |         3B. TIER 1 ZERO-SHOT NEURAL SLM (~40ms)       |
+|  * Verhoeff Checksum (Aadhaar 12-digit UID)           |   |  * GLiNER 152M Bi-Encoder Zero-Shot Neural Model      |
+|  * ITD Regex (PAN: [A-Z]{5}[0-9]{4}[A-Z])             |   |  * Bare Names (Sarah Connor, Rahul Sharma, Marcus)    |
+|  * Luhn Checksum (Credit / Debit Cards)               |   |  * Sub-City Localities (Indiranagar, Anna Nagar, Pune)|
+|  * VPA Syntax Engine (@okaxis, @okhdfcbank, @paytm)   |   |  * Unstructured Salary (INR 24 LPA, Rs. 35,00,000)    |
+|  * HIPAA Safe Harbor Keys (SSN, MRN, Health IDs)      |   |  * Threshold: 0.52 + GENERIC_NOUN_STOP Suppression    |
+|  * Title Anchors (Dr. [Name], Patient: [Name])        |   |  * Prescription Drug Safeguard (0% False Alarms)      |
++-------------------------------------------------------+   +-------------------------------------------------------+
+                            |                                                       |
+                            +---------------------------+---------------------------+
+                                                        |
+                                                        v
+========================================================================================================================
+                                      SPAN DEDUPLICATION & CONFLICT RESOLVER
+      Resolves overlapping boundaries  -->  Merges multi-tier detections  -->  Preserves clinical drug regimens
+========================================================================================================================
+                            |                                                       |
+                            v                                                       v
++-------------------------------------------------------+   +-------------------------------------------------------+
+|            4. STATE & CRYPTOGRAPHIC VAULT             |   |      5. AUTONOMOUS AGENT RUNTIME & REASONING ENCLAVE   |
+|  * PIISessionVault: In-Memory Token Store             |   |  +-------------------------------------------------+  |
+|    Maps [HASH:7a8b9c] <-> Raw Entity                  |   |  | A. Single-Agent ReAct Execution Loop            |  |
+|    (Zero persistence on disk; session-scoped memory)  |   |  |    Ingests safe hashes -> ReAct loop -> LLM     |  |
+|  * Immutable Audit Ledger (SQLite WAL / JSON)         |   |  +------------------------+------------------------+  |
+|    Append-only forensic breach ledger for SOC2 & HIPAA|   |                           |                           |
++-------------------------------------------------------+   |                           v                           |
+                                                            |  +-------------------------------------------------+  |
+                                                            |  | B. Multi-Agent Orchestration Mesh (A2A Gateway) |  |
+                                                            |  |    Supervisor Agent -> [Inter-Agent Guardrail]  |  |
+                                                            |  |    |-- Worker Alpha (Clinical: HIPAA Permitted) |  |
+                                                            |  |    |-- Worker Beta  (Billing: DPDP Permitted)   |  |
+                                                            |  |    +-- Worker Gamma (Public: ZERO PII Access)   |  |
+                                                            |  +-------------------------------------------------+  |
+                                                            +---------------------------+---------------------------+
+                                                                                        | Function Call Dispatch
+                                                                                        v
+========================================================================================================================
+                                    6. TOOL CALL & FUNCTION EXECUTION GUARDRAIL ENCLAVE
+   [1. Pre-Execution Argument Guardrail]  -->  [2. Sandboxed Tool Targets]  -->  [3. Post-Execution Result Scrubbing]
+   * Intercepts function args (query, SQL)      * Enterprise Postgres DB         * Scans returned rows vs HIPAA/DPDP
+   * Blocks external SSN/Card exfiltration      * EHR Systems (Epic/Cerner)      * Strips DB raw PII before LLM context
+   * Auto-tokenizes sensitive parameters        * External Web Search & APIs     * Blocks prompt injection in web crawl
+========================================================================================================================
+                                                                                        | Final Completion
+                                                                                        v
+========================================================================================================================
+                                 7. EGRESS SANITIZATION, REVERSE VAULT & STREAMING GATEWAY
+   Dual-Pass Output Scan  -->  Reverse De-anonymization Vault  -->  Sliding-Window SSE Buffer  -->  HTTP 200 Stream
+   (Catches hallucinations)    (Restores [HASH] for client)         (64-token chunk filter)         (Zero Leaks)
+========================================================================================================================
+                                                                                        | Request Telemetry
+                                                                                        v
+========================================================================================================================
+                                     8. CONTROL PLANE, METRICS & AUDIT TELEMETRY
+   * Authority-Trust Score (ATS): 80 + StreakBonus - ViolationPenalty (Tier 1: Trusted Operator)
+   * Effective-Use Score (EUS): (Clean Requests / Total Requests) x 100 (100% Clean Ratio)
+   * Real-Time Telemetry Stream: /api/sessions/{id}/events (Instant SSE push to security dashboard)
+========================================================================================================================
 ```
 
 ---
 
-## Architectural Breakdown & Tier Specifications
+## 3. Tier Specifications & Security Policies
 
 ### 1. Ingestion & Client Tier
 * **Supported Clients:** Standard OpenAI SDK, LangChain, LlamaIndex, Cline, Cursor IDE, and web frontends.
