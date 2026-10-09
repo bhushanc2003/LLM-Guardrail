@@ -92,25 +92,50 @@ async def global_exception_handler(request: Request, exc: Exception):
     )
 
 # The built React dashboard (run `npm run build` in frontend/ to produce this).
-FRONTEND_DIST = os.path.join(os.path.dirname(os.path.dirname(__file__)), "frontend", "dist")
+def _resolve_frontend_dist():
+    candidates = [
+        os.path.join(os.path.dirname(os.path.dirname(__file__)), "frontend", "dist"),
+        os.path.join(os.getcwd(), "frontend", "dist"),
+        os.path.join(os.path.dirname(__file__), "frontend", "dist"),
+        os.path.join("/var/task", "frontend", "dist"),
+    ]
+    for c in candidates:
+        if os.path.isdir(c):
+            return c
+    return candidates[0]
+
+FRONTEND_DIST = _resolve_frontend_dist()
 FRONTEND_INDEX = os.path.join(FRONTEND_DIST, "index.html")
 FRONTEND_ASSETS = os.path.join(FRONTEND_DIST, "assets")
 
 if os.path.isdir(FRONTEND_ASSETS):
     app.mount("/assets", StaticFiles(directory=FRONTEND_ASSETS), name="frontend-assets")
 
+@app.get("/assets/{file_path:path}")
+async def serve_static_asset(file_path: str):
+    dist_dir = _resolve_frontend_dist()
+    asset_file = os.path.join(dist_dir, "assets", file_path)
+    if os.path.isfile(asset_file):
+        from fastapi.responses import FileResponse
+        return FileResponse(asset_file)
+    raise HTTPException(status_code=404, detail="Asset not found")
+
 @app.api_route("/", methods=["GET", "HEAD"], response_class=HTMLResponse)
 @app.api_route("/overview", methods=["GET", "HEAD"], response_class=HTMLResponse)
 @app.api_route("/activity", methods=["GET", "HEAD"], response_class=HTMLResponse)
 @app.api_route("/users", methods=["GET", "HEAD"], response_class=HTMLResponse)
+@app.api_route("/user", methods=["GET", "HEAD"], response_class=HTMLResponse)
 @app.api_route("/trust", methods=["GET", "HEAD"], response_class=HTMLResponse)
 @app.api_route("/test", methods=["GET", "HEAD"], response_class=HTMLResponse)
 async def render_dashboard(request: Request):
     """Serve the complete dashboard with 3-method AI benchmark sandbox and initial loader state."""
     clerk_pub_key = os.getenv("VITE_CLERK_PUBLISHABLE_KEY", "pk_test_ZHJpdmVuLWNsYW0tOTMwNi5jbGVyay5hY2NvdW50cy5kZXYk")
     clerk_js = os.getenv("CLERK_FRONTEND_API_URL", "https://driven-clam-9306.clerk.accounts.dev/npm/@clerk/clerk-js@5/dist/clerk.browser.js")
-    if os.path.exists(FRONTEND_INDEX):
-        with open(FRONTEND_INDEX, "r", encoding="utf-8") as f:
+    
+    current_dist = _resolve_frontend_dist()
+    index_file = os.path.join(current_dist, "index.html")
+    if os.path.exists(index_file):
+        with open(index_file, "r", encoding="utf-8") as f:
             return HTMLResponse(content=f.read())
     return templates.TemplateResponse(
         request=request,
