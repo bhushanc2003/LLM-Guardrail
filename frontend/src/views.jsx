@@ -108,7 +108,7 @@ function Bars({ items, color = C.accent, empty = 'No data yet.' }) {
 
 // ---------- Logs ----------
 
-export function LogsView({ authedFetch, uuid = null, initialEvent = null, onOpenSession }) {
+export function LogsView({ authedFetch, uuid = null, initialEvent = null, onOpenSession, title = null }) {
   const [limit, setLimit] = useState(20);
   const [rows, setRows] = useState([]);
   const [users, setUsers] = useState([]);
@@ -162,7 +162,7 @@ export function LogsView({ authedFetch, uuid = null, initialEvent = null, onOpen
 
   return (
     <Card
-      title={uuid ? 'My logs' : 'All logs'}
+      title={title || (uuid ? 'Requests' : 'All logs')}
       action={<LimitSelect value={limit} onChange={setLimit} />}
     >
       <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginBottom: '14px' }}>
@@ -209,7 +209,7 @@ export function LogsView({ authedFetch, uuid = null, initialEvent = null, onOpen
 
 // ---------- Sessions ----------
 
-export function SessionsView({ authedFetch, uuid = null, showUser = false, initialSession = null }) {
+export function SessionsView({ authedFetch, uuid = null, showUser = false, initialSession = null, title = null }) {
   const [limit, setLimit] = useState(20);
   const [sessions, setSessions] = useState([]);
   const [selected, setSelected] = useState(initialSession);
@@ -269,7 +269,7 @@ export function SessionsView({ authedFetch, uuid = null, showUser = false, initi
   });
   const shown = filtered.slice(0, limit);
   return (
-    <Card title={uuid ? 'My sessions' : 'All sessions'} action={<LimitSelect value={limit} onChange={setLimit} />}>
+    <Card title={title || (uuid ? 'Sessions' : 'All sessions')} action={<LimitSelect value={limit} onChange={setLimit} />}>
       <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginBottom: '14px' }}>
         <input value={search} onChange={e => setSearch(e.target.value)} placeholder={showUser ? 'Search session or user' : 'Search session'} style={{ ...inputStyle, flex: '1 1 260px' }} />
         <select value={violationsOnly ? 'violations' : 'all'} onChange={e => setViolationsOnly(e.target.value === 'violations')} style={inputStyle}>

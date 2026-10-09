@@ -226,16 +226,16 @@ function Dashboard() {
         : (showMe ? me.user_uuid : null);
 
       header = (
-        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: '14px', width: '100%' }}>
-          {isSpecificAdminUser ? (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+        <div style={{ display: 'grid', gap: '12px', width: '100%' }}>
+          {isSpecificAdminUser && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
               <button
                 onClick={() => go('activity', { user_uuid: null, user_email: null, view: 'requests' })}
                 style={{
                   background: 'rgba(0, 242, 254, 0.08)',
                   border: `1px solid rgba(0, 242, 254, 0.3)`,
                   color: '#00f2fe',
-                  padding: '7px 14px',
+                  padding: '7px 16px',
                   borderRadius: '8px',
                   cursor: 'pointer',
                   fontSize: '0.84rem',
@@ -243,16 +243,17 @@ function Dashboard() {
                   display: 'inline-flex',
                   alignItems: 'center',
                   gap: '6px',
+                  transition: 'all 0.15s ease',
                 }}
               >
                 ← Back to Users
               </button>
               <div style={{
-                padding: '6px 12px',
+                padding: '6px 14px',
                 borderRadius: '8px',
                 background: 'rgba(12, 19, 39, 0.8)',
                 border: `1px solid ${C.border}`,
-                fontSize: '0.85rem',
+                fontSize: '0.86rem',
                 display: 'flex',
                 alignItems: 'center',
                 gap: '8px',
@@ -261,30 +262,32 @@ function Dashboard() {
                   👤 {nav.params.user_email || nav.params.user_uuid}
                 </span>
                 {nav.params.user_uuid !== 'all' && (
-                  <span style={{ color: C.faint, fontSize: '0.74rem', fontFamily: mono }}>
+                  <span style={{ color: C.faint, fontSize: '0.76rem', fontFamily: mono }}>
                     ({nav.params.user_uuid})
                   </span>
                 )}
               </div>
             </div>
-          ) : <div />}
+          )}
 
-          <Segmented
-            value={view}
-            onChange={v => go('activity', {
-              view: v,
-              scope: nav.params.scope,
-              user_uuid: nav.params.user_uuid,
-              user_email: nav.params.user_email,
-            })}
-            options={[['requests', 'Requests'], ['sessions', 'Sessions']]}
-          />
+          <div style={{ display: 'flex', alignItems: 'center' }}>
+            <Segmented
+              value={view}
+              onChange={v => go('activity', {
+                view: v,
+                scope: nav.params.scope,
+                user_uuid: nav.params.user_uuid,
+                user_email: nav.params.user_email,
+              })}
+              options={[['requests', 'Requests'], ['sessions', 'Sessions']]}
+            />
+          </div>
         </div>
       );
 
       content = view === 'sessions'
-        ? <SessionsView authedFetch={authedFetch} uuid={targetUuid} showUser={targetUuid === null} initialSession={nav.params.session || null} />
-        : <LogsView authedFetch={authedFetch} uuid={targetUuid} initialEvent={nav.params.event || null} onOpenSession={openSession} />;
+        ? <SessionsView authedFetch={authedFetch} uuid={targetUuid} showUser={targetUuid === null} initialSession={nav.params.session || null} title="Sessions" />
+        : <LogsView authedFetch={authedFetch} uuid={targetUuid} initialEvent={nav.params.event || null} onOpenSession={openSession} title="Requests" />;
     }
   } else if (nav.page === 'trust') {
     content = <TrustAnalyticsView authedFetch={authedFetch} me={me} isAdmin={isAdmin} initialUuid={nav.params.user_uuid || null} />;
