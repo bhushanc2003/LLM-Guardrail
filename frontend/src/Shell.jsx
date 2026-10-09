@@ -8,8 +8,6 @@ import {
   IconTrust,
   IconUsers,
   IconTest,
-  IconSun,
-  IconMoon,
   IconChevronLeft,
   IconChevronRight,
 } from './ui.jsx';
@@ -31,29 +29,16 @@ export default function Shell({ items, active, onNav, title, subtitle, userButto
     }
   });
 
-  const [theme, setTheme] = useState(() => {
-    try {
-      return localStorage.getItem('app_theme') || 'dark';
-    } catch (_) {
-      return 'dark';
-    }
-  });
+  const theme = 'dark';
 
-  const toggleTheme = () => {
-    const next = theme === 'dark' ? 'light' : 'dark';
-    setTheme(next);
+  React.useEffect(() => {
+    document.documentElement.setAttribute('data-theme', 'dark');
+    document.body.style.backgroundColor = '#060913';
+    document.body.style.color = '#f8fafc';
     try {
-      localStorage.setItem('app_theme', next);
+      localStorage.setItem('app_theme', 'dark');
     } catch (_) {}
-    document.documentElement.setAttribute('data-theme', next);
-    if (next === 'light') {
-      document.body.style.backgroundColor = '#f1f5f9';
-      document.body.style.color = '#0f172a';
-    } else {
-      document.body.style.backgroundColor = '#060913';
-      document.body.style.color = '#f8fafc';
-    }
-  };
+  }, []);
 
   const toggle = () => {
     setCollapsed(prev => {
@@ -301,35 +286,6 @@ export default function Shell({ items, active, onNav, title, subtitle, userButto
             </div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-            {/* Theme Toggle Button */}
-            <button
-              onClick={toggleTheme}
-              title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                padding: '6px 14px',
-                borderRadius: '10px',
-                background: theme === 'dark' ? 'rgba(255, 255, 255, 0.06)' : 'rgba(15, 23, 42, 0.05)',
-                border: theme === 'dark' ? '1px solid rgba(255, 255, 255, 0.12)' : '1px solid rgba(15, 23, 42, 0.12)',
-                color: theme === 'dark' ? '#f8fafc' : '#0f172a',
-                cursor: 'pointer',
-                fontSize: '0.84rem',
-                fontWeight: 600,
-                transition: 'all 0.18s ease',
-                backdropFilter: 'blur(12px)',
-              }}
-            >
-              <span style={{ display: 'flex', alignItems: 'center' }}>
-                {theme === 'dark' ? (
-                  <IconMoon size={15} color="#94a3b8" strokeWidth={2} />
-                ) : (
-                  <IconSun size={15} color="#f59e0b" strokeWidth={2} />
-                )}
-              </span>
-              <span>{theme === 'dark' ? 'Dark' : 'Light'}</span>
-            </button>
             {userButton}
           </div>
         </header>
