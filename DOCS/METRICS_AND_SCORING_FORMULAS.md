@@ -192,7 +192,7 @@ clean_requests = sum(1 for c, _ in classifications if c == "clean")
 effective_use_score = round((clean_requests / total_requests) * 100, 1) if total_requests > 0 else 100.0
 
 # 2. Authority-Trust Score
-base_score = 60.0 if user.role == "admin" else 50.0
+base_score = 80.0
 chrono_events = sorted(events, key=lambda ev: ev.created_at or datetime.min)
 current_streak = 0
 cumulative_penalties = 0.0
@@ -206,7 +206,8 @@ for ev in chrono_events:
         penalty = max(SEVERITY_PENALTIES[get_finding_severity(ent)] for ent in ents) if ents else 15.0 if cat in ("denied", "blocked") else 8.0
         cumulative_penalties += penalty
 
-streak_bonus = 50.0 * (1.0 - math.exp(-current_streak / 25.0))
+max_bonus = 100.0 - base_score  # 20.0 pts up to 100
+streak_bonus = max_bonus * (1.0 - math.exp(-current_streak / 25.0))
 raw_authority_trust = base_score + streak_bonus - cumulative_penalties
 authority_trust_score = round(max(0.0, min(100.0, raw_authority_trust)), 1)
 ```

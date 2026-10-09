@@ -42,29 +42,30 @@ This document provides simple, human-readable formulas for the 3 core governance
 Authority-Trust = Base + Streak Bonus − Cumulative Penalties
 
 Where:
-  Streak Bonus       = 50 × (1 − e^(−current_streak / 25))
+  Base               = 80.0 (default starting score)
+  Streak Bonus       = 20 × (1 − e^(−current_streak / 25))   [Max +20 pts, bringing score to 100]
   current_streak     = consecutive clean requests since last violation
-  Cumulative Penalties = sum of all past violation penalties (never resets)
+  Cumulative Penalties = sum of all past violation penalties
 ```
 
 ### What Happens on Each Request:
 
 ```
-  Clean Request  →  current_streak += 1  →  Streak Bonus grows (exponentially)
+  Clean Request  →  current_streak += 1  →  Streak Bonus grows towards +20 pts
   Violation      →  current_streak = 0   →  Streak Bonus drops to ZERO
                     + apply severity penalty based on PII type detected
 ```
 
 ### How Trust is Earned (Exponential Streak Growth):
 
-| Current Streak | Streak Bonus (of 50 max) | % of Ceiling |
+| Current Streak | Streak Bonus (of 20 max) | Resulting Score (Base 80 + Bonus) |
 | :---: | :---: | :---: |
-| 1 | +2.0 | 4% |
-| 5 | +9.1 | 18% |
-| 10 | +16.5 | 33% |
-| 25 | +31.6 | 63% |
-| 50 | +43.2 | 86% |
-| 100 | +49.1 | 98% |
+| 0 (Start) | +0.0 | 80.0 |
+| 5 | +3.6 | 83.6 |
+| 10 | +6.6 | 86.6 |
+| 25 | +12.6 | 92.6 |
+| 50 | +17.3 | 97.3 |
+| 100 | +19.6 | 99.6 |
 
 **One violation → streak resets to 0 → bonus drops back to 0.**
 You have to rebuild from scratch.

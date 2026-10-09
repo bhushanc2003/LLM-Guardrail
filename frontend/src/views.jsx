@@ -1767,7 +1767,7 @@ export function TrustAnalyticsView({ authedFetch, me, isAdmin, initialUuid }) {
   const loggedRequests = metrics.logged_requests || 0;
   const totalViolations = metrics.total_violations || 0;
   const effectiveUse = metrics.effective_use_score ?? null;
-  const authorityTrust = metrics.authority_trust_score ?? 0;
+  const authorityTrust = metrics.authority_trust_score ?? 80;
   const currentStreak = metrics.current_streak ?? 0;
   const streakBonus = metrics.streak_bonus ?? 0;
   const cumulativePenalties = metrics.cumulative_penalties ?? 0;

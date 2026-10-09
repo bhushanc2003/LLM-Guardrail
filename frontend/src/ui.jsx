@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 
 export const C = {
   bg: '#050814',
@@ -155,7 +155,61 @@ export function Loader({ text = 'Loading data…' }) {
   );
 }
 
-export function Loader3D({ title = 'Adrishya', subtitle = 'Loading...' }) {
+export function Loader3D({
+  title = 'GuardIAn',
+  subtitle = 'Autonomous AI Privacy Guardian',
+  isReady = true,
+  onFinish = null
+}) {
+  const [progress, setProgress] = useState(0);
+  const [gifSrc] = useState(() => `/assets/guardian_robot.gif?t=${Date.now()}`);
+  const hasFinishedRef = useRef(false);
+
+  useEffect(() => {
+    const originalBodyBg = document.body.style.backgroundColor;
+    const originalHtmlBg = document.documentElement.style.backgroundColor;
+    document.body.style.backgroundColor = '#000000';
+    document.documentElement.style.backgroundColor = '#000000';
+
+    const duration = 5200; // 5.2s for 1 complete GIF cycle (155 frames @ ~33ms = 5160ms)
+    const start = Date.now();
+    const interval = setInterval(() => {
+      const elapsed = Date.now() - start;
+      const pct = Math.min(100, (elapsed / duration) * 100);
+      setProgress(pct);
+      if (pct >= 100) {
+        clearInterval(interval);
+      }
+    }, 50);
+
+    return () => {
+      clearInterval(interval);
+      document.body.style.backgroundColor = originalBodyBg;
+      document.documentElement.style.backgroundColor = originalHtmlBg;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (progress >= 100 && isReady && !hasFinishedRef.current) {
+      hasFinishedRef.current = true;
+      if (onFinish) {
+        const timer = setTimeout(onFinish, 120);
+        return () => clearTimeout(timer);
+      }
+    }
+  }, [progress, isReady, onFinish]);
+
+  let statusLabel = 'INITIALIZING NEURAL ENGINE…';
+  if (progress >= 30 && progress < 70) {
+    statusLabel = 'PATROLLING DATA PERIMETER…';
+  } else if (progress >= 70 && progress < 100) {
+    statusLabel = 'ARMING REAL-TIME LLM GUARDRAILS…';
+  } else if (progress >= 100 && !isReady) {
+    statusLabel = 'PERIMETER SECURE · PREPARING DASHBOARD…';
+  } else if (progress >= 100) {
+    statusLabel = 'PERIMETER SECURE · ACCESS GRANTED';
+  }
+
   return (
     <div style={{
       display: 'flex',
@@ -163,155 +217,122 @@ export function Loader3D({ title = 'Adrishya', subtitle = 'Loading...' }) {
       alignItems: 'center',
       justifyContent: 'center',
       minHeight: '100vh',
-      background: 'radial-gradient(ellipse at center, #0d1733 0%, #030712 75%)',
+      width: '100%',
+      background: '#000000',
+      color: '#f8fafc',
       textAlign: 'center',
       padding: '24px',
       fontFamily: "'Outfit', system-ui, sans-serif",
       position: 'relative',
       overflow: 'hidden',
+      boxSizing: 'border-box',
     }}>
-      <style>{`
-        @keyframes loaderOrbit1 {
-          0% { transform: rotate(0deg); }
-          100% { transform: rotate(360deg); }
-        }
-        @keyframes loaderOrbit3DX {
-          0% { transform: rotateX(65deg) rotateZ(0deg); }
-          100% { transform: rotateX(65deg) rotateZ(360deg); }
-        }
-        @keyframes loaderOrbit3DY {
-          0% { transform: rotateY(65deg) rotateZ(0deg); }
-          100% { transform: rotateY(65deg) rotateZ(-360deg); }
-        }
-        @keyframes loaderPulseCore {
-          0%, 100% { transform: scale(1); box-shadow: 0 0 16px rgba(0, 242, 254, 0.5); }
-          50% { transform: scale(1.1); box-shadow: 0 0 24px rgba(168, 85, 247, 0.7), 0 0 35px rgba(0, 242, 254, 0.4); }
-        }
-        @keyframes loaderPulseDot {
-          0%, 100% { opacity: 0.35; transform: scale(0.85); }
-          50% { opacity: 1; transform: scale(1.25); }
-        }
-      `}</style>
-
-      {/* 3D Multi-Layer Rotating Orbit Stage */}
-      <div style={{
-        position: 'relative',
-        width: '120px',
-        height: '120px',
-        perspective: '1000px',
-        transformStyle: 'preserve-3d',
-        marginBottom: '24px',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-      }}>
-        {/* Ambient Glow Aura */}
+      {/* Header Title with AI Highlight */}
+      <div style={{ marginBottom: '20px' }}>
+        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
+          <div style={{
+            width: '42px',
+            height: '42px',
+            borderRadius: '12px',
+            background: 'linear-gradient(135deg, #00f2fe, #a855f7)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            boxShadow: '0 0 25px rgba(0, 242, 254, 0.6)',
+          }}>
+            <IconShield size={24} color="#ffffff" strokeWidth={2.4} />
+          </div>
+          <div style={{
+            fontSize: '3rem',
+            fontWeight: 900,
+            letterSpacing: '0.04em',
+            lineHeight: 1.1,
+          }}>
+            <span style={{ color: '#ffffff' }}>Guard</span>
+            <span style={{
+              color: '#00f2fe',
+              textShadow: '0 0 28px rgba(0, 242, 254, 0.9), 0 0 12px rgba(0, 242, 254, 0.6)',
+            }}>IA</span>
+            <span style={{ color: '#ffffff' }}>n</span>
+          </div>
+        </div>
         <div style={{
-          position: 'absolute',
-          width: '100px',
-          height: '100px',
-          borderRadius: '50%',
-          background: 'radial-gradient(circle, rgba(0, 242, 254, 0.3) 0%, rgba(168, 85, 247, 0.18) 50%, transparent 70%)',
-          filter: 'blur(14px)',
-        }} />
-
-        {/* Outer Continuous Rotating Gradient Arc */}
-        <div style={{
-          position: 'absolute',
-          width: '116px',
-          height: '116px',
-          borderRadius: '50%',
-          border: '2px solid transparent',
-          borderTop: '2px solid #00f2fe',
-          borderRight: '2px solid #00f2fe',
-          borderBottom: '2px solid rgba(0, 242, 254, 0.15)',
-          boxShadow: '0 0 18px rgba(0, 242, 254, 0.35)',
-          animation: 'loaderOrbit1 1.8s cubic-bezier(0.5, 0.1, 0.5, 0.9) infinite',
-        }} />
-
-        {/* Middle 3D Oblique Orbit Ring (Purple) */}
-        <div style={{
-          position: 'absolute',
-          width: '92px',
-          height: '92px',
-          borderRadius: '50%',
-          border: '2px solid transparent',
-          borderLeft: '2px solid #a855f7',
-          borderTop: '2px solid #a855f7',
-          boxShadow: '0 0 16px rgba(168, 85, 247, 0.4)',
-          animation: 'loaderOrbit3DX 2.4s linear infinite',
-        }} />
-
-        {/* Inner 3D Counter-Rotating Orbit Ring (Sky Blue) */}
-        <div style={{
-          position: 'absolute',
-          width: '70px',
-          height: '70px',
-          borderRadius: '50%',
-          border: '1.8px solid transparent',
-          borderTop: '1.8px solid #38bdf8',
-          borderBottom: '1.8px solid #38bdf8',
-          boxShadow: '0 0 12px rgba(56, 189, 248, 0.35)',
-          animation: 'loaderOrbit3DY 1.9s linear infinite',
-        }} />
-
-        {/* Compact, Perfectly Centered Micro Logo Shield */}
-        <div style={{
-          position: 'absolute',
-          top: '50%',
-          left: '50%',
-          width: '28px',
-          height: '28px',
-          marginTop: '-14px',
-          marginLeft: '-14px',
-          borderRadius: '8px',
-          background: 'linear-gradient(135deg, #00f2fe, #a855f7)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          animation: 'loaderPulseCore 2.4s ease-in-out infinite',
-          zIndex: 2,
-          boxShadow: '0 0 14px rgba(0, 242, 254, 0.45)',
+          fontSize: '0.85rem',
+          fontWeight: 600,
+          letterSpacing: '0.14em',
+          textTransform: 'uppercase',
+          color: '#94a3b8',
         }}>
-          <IconShield size={15} color="#ffffff" strokeWidth={2.4} />
+          {subtitle}
         </div>
       </div>
 
-      {/* Clean Single-Focus Title & Status */}
+      {/* 3D Robot Walking Stage - Seamless black integration */}
       <div style={{
-        fontSize: '1.45rem',
-        fontWeight: 800,
-        background: 'linear-gradient(135deg, #ffffff 20%, #00f2fe 65%, #a855f7 100%)',
-        WebkitBackgroundClip: 'text',
-        WebkitTextFillColor: 'transparent',
-        letterSpacing: '0.03em',
-        lineHeight: 1.2,
-      }}>
-        {title}
-      </div>
-
-      <div style={{
-        margin: '6px 0 0 0',
-        fontSize: '0.82rem',
-        color: '#94a3b8',
+        position: 'relative',
         display: 'flex',
+        flexDirection: 'column',
         alignItems: 'center',
         justifyContent: 'center',
-        gap: '8px',
-        fontWeight: 600,
-        letterSpacing: '0.04em',
-        textTransform: 'uppercase',
+        background: '#000000',
+        margin: '10px 0 16px 0',
       }}>
-        <span style={{
-          display: 'inline-block',
-          width: '6px',
-          height: '6px',
+        <img
+          src={gifSrc}
+          alt="GuardIAn Robot"
+          onError={(e) => { e.currentTarget.src = 'https://upload.wikimedia.org/wikipedia/commons/7/7b/Avatar_3D.gif'; }}
+          style={{
+            maxWidth: '380px',
+            maxHeight: '290px',
+            width: 'auto',
+            height: 'auto',
+            display: 'block',
+            background: '#000000',
+          }}
+        />
+
+        {/* Ambient floor reflection / ground glow */}
+        <div style={{
+          width: '240px',
+          height: '14px',
           borderRadius: '50%',
-          background: '#00f2fe',
-          boxShadow: '0 0 8px #00f2fe',
-          animation: 'loaderPulseDot 1.4s ease-in-out infinite',
+          background: 'radial-gradient(ellipse at center, rgba(0, 242, 254, 0.28) 0%, rgba(0, 0, 0, 0) 70%)',
+          marginTop: '-6px',
+          filter: 'blur(3px)',
         }} />
-        {subtitle}
+      </div>
+
+      {/* Progress Bar & Status Tracker */}
+      <div style={{ width: '340px', maxWidth: '88vw', margin: '16px 0 0 0' }}>
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          fontSize: '0.78rem',
+          fontWeight: 700,
+          color: '#94a3b8',
+          letterSpacing: '0.08em',
+          textTransform: 'uppercase',
+          marginBottom: '8px',
+        }}>
+          <span>{statusLabel}</span>
+          <span style={{ color: '#00f2fe', fontFamily: 'monospace' }}>{Math.round(progress)}%</span>
+        </div>
+        <div style={{
+          width: '100%',
+          height: '6px',
+          borderRadius: '3px',
+          background: '#1a1f2c',
+          overflow: 'hidden',
+        }}>
+          <div style={{
+            width: `${progress}%`,
+            height: '100%',
+            background: 'linear-gradient(90deg, #00f2fe, #a855f7)',
+            borderRadius: '3px',
+            boxShadow: '0 0 12px rgba(0, 242, 254, 0.8)',
+            transition: 'width 0.05s linear',
+          }} />
+        </div>
       </div>
     </div>
   );
@@ -759,15 +780,19 @@ export function AdrishyaLogo({ size = 'default', showSubtitle = true, collapsed 
           <div
             style={{
               fontWeight: 800,
-              fontSize: isLarge ? '1.4rem' : isSmall ? '0.88rem' : '0.98rem',
-              background: 'linear-gradient(135deg, #ffffff 20%, #00f2fe 65%, #a855f7 100%)',
-              WebkitBackgroundClip: 'text',
-              WebkitTextFillColor: 'transparent',
-              letterSpacing: isLarge ? '-0.02em' : '0.005em',
+              fontSize: isLarge ? '1.5rem' : isSmall ? '0.92rem' : '1.05rem',
+              letterSpacing: isLarge ? '-0.02em' : '0.01em',
               lineHeight: 1.15,
             }}
           >
-            Adrishya
+            <span style={{ color: '#ffffff' }}>Guard</span>
+            <span style={{
+              background: 'linear-gradient(135deg, #00f2fe 0%, #a855f7 100%)',
+              WebkitBackgroundClip: 'text',
+              WebkitTextFillColor: 'transparent',
+              filter: 'drop-shadow(0 0 10px rgba(0, 242, 254, 0.5))',
+            }}>IA</span>
+            <span style={{ color: '#ffffff' }}>n</span>
           </div>
           {showSubtitle && (
             <div
@@ -788,6 +813,8 @@ export function AdrishyaLogo({ size = 'default', showSubtitle = true, collapsed 
     </div>
   );
 }
+
+export const GuardianLogo = AdrishyaLogo;
 
 /* Professional Enterprise SVG Icons */
 export function IconShield({ size = 18, color = 'currentColor', strokeWidth = 2, style = {} }) {

@@ -893,8 +893,8 @@ async def get_user_trust_analytics(user_uuid: str, user: DBUser = Depends(get_cu
         effective_use_score = round((clean_requests / total_requests) * 100, 1) if total_requests > 0 else 100.0
 
         # 1. Authority-Trust Score: Streak-based exponential growth + severity-based penalties
-        # Base: 60 for admin, 50 for standard user
-        base_score = 60.0 if target_user.role == "admin" else 50.0
+        # Base default score: 80.0
+        base_score = 80.0
         chrono_events = sorted(events, key=lambda ev: ev.created_at or datetime.min)
         current_streak = 0
         cumulative_penalties = 0.0
@@ -913,7 +913,8 @@ async def get_user_trust_analytics(user_uuid: str, user: DBUser = Depends(get_cu
                     penalty = 8.0   # Medium severity default
                 cumulative_penalties += penalty
 
-        streak_bonus = 50.0 * (1.0 - math.exp(-current_streak / 25.0))
+        max_bonus = 100.0 - base_score  # 20.0 bonus points up to 100.0
+        streak_bonus = max_bonus * (1.0 - math.exp(-current_streak / 25.0))
         raw_authority_trust = base_score + streak_bonus - cumulative_penalties
         authority_trust_score = round(max(0.0, min(100.0, raw_authority_trust)), 1)
 

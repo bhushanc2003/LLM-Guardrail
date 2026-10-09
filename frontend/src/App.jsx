@@ -163,6 +163,11 @@ function WireframeCube({ size = 80, x = '10%', y = '20%', rotSpeed = '16s', dela
 }
 
 function LandingPage() {
+  useEffect(() => {
+    try {
+      sessionStorage.removeItem('guardian_login_intro_played');
+    } catch {}
+  }, []);
   const [activeTab, setActiveTab] = useState('healthcare');
   const [copied, setCopied] = useState(false);
 
@@ -456,7 +461,7 @@ function LandingPage() {
             lineHeight: 1.65,
             fontWeight: 400,
           }}>
-            <strong style={{ color: '#f8fafc', fontWeight: 600 }}>Adrishya</strong> is the invisible privacy layer for Generative AI. Intercept, cryptographically mask sensitive <strong style={{ color: '#00f2fe' }}>PII/PHI</strong>, and audit LLM prompts in real time with <strong style={{ color: '#10b981' }}>zero cleartext data leakage</strong>.
+            <strong style={{ color: '#f8fafc', fontWeight: 600 }}>GuardIAn</strong> is the invisible privacy layer for Generative AI. Intercept, cryptographically mask sensitive <strong style={{ color: '#00f2fe' }}>PII/PHI</strong>, and audit LLM prompts in real time with <strong style={{ color: '#10b981' }}>zero cleartext data leakage</strong>.
           </p>
 
           {/* CTA Buttons */}
@@ -573,7 +578,7 @@ function LandingPage() {
                 </h2>
               </div>
               <p style={{ fontSize: '0.88rem', color: '#94a3b8', margin: '4px 0 0 0' }}>
-                Watch Adrishya intercept sensitive inputs, apply SHA-256 cryptographic masking, and guard model egress in real-time.
+                Watch GuardIAn intercept sensitive inputs, apply SHA-256 cryptographic masking, and guard model egress in real-time.
               </p>
             </div>
 
@@ -678,7 +683,7 @@ function LandingPage() {
               </div>
             </div>
 
-            {/* Stage 2: Adrishya 3D Stealth Processor */}
+            {/* Stage 2: GuardIAn 3D Stealth Processor */}
             <div style={{
               background: 'linear-gradient(135deg, rgba(16, 24, 48, 0.9) 0%, rgba(8, 14, 30, 0.95) 100%)',
               border: '1px solid rgba(0, 242, 254, 0.45)',
@@ -693,7 +698,7 @@ function LandingPage() {
               <div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
                   <span style={{ fontSize: '0.78rem', fontWeight: 800, color: '#00f2fe', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                    2. Adrishya Stealth Engine
+                    2. GuardIAn Stealth Engine
                   </span>
                   <span style={{ fontSize: '0.72rem', padding: '3px 8px', borderRadius: '6px', background: 'rgba(0, 242, 254, 0.15)', color: '#00f2fe', border: '1px solid rgba(0, 242, 254, 0.35)', fontWeight: 700 }}>
                     ⚡ 1.2ms HASHING
@@ -867,7 +872,7 @@ function LandingPage() {
                 </h3>
               </div>
               <p style={{ fontSize: '0.84rem', color: '#94a3b8', margin: '4px 0 0 0' }}>
-                Route existing OpenAI client traffic through your Adrishya reverse proxy link.
+                Route existing OpenAI client traffic through your GuardIAn reverse proxy link.
               </p>
             </div>
 
@@ -943,7 +948,7 @@ function LandingPage() {
             WebkitBackgroundClip: 'text',
             WebkitTextFillColor: 'transparent',
           }}>
-            Ready to Cloak Your AI Prompts with Adrishya?
+            Ready to Cloak Your AI Prompts with GuardIAn?
           </h2>
           <p style={{ fontSize: '1.05rem', color: '#94a3b8', maxWidth: '620px', margin: '0 auto 28px auto', lineHeight: 1.6 }}>
             Set up in 60 seconds. Eliminate HIPAA and DPDP compliance risk while unleashing full LLM capabilities across your team.
@@ -1087,8 +1092,54 @@ function Dashboard() {
     setNav({ page, params });
   };
 
+  const [introFinished, setIntroFinished] = useState(() => {
+    try {
+      return sessionStorage.getItem('guardian_login_intro_played') === 'true';
+    } catch {
+      return false;
+    }
+  });
+  const isReady = me !== undefined && pageReady;
+
+  if (!introFinished) {
+    return (
+      <Loader3D
+        isReady={isReady}
+        onFinish={() => {
+          try {
+            sessionStorage.setItem('guardian_login_intro_played', 'true');
+          } catch {}
+          setIntroFinished(true);
+        }}
+      />
+    );
+  }
+
   if (me === undefined || !pageReady) {
-    return <Loader3D />;
+    return (
+      <div style={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        minHeight: '100vh',
+        background: '#050814',
+        color: '#94a3b8',
+        fontFamily: "'Outfit', system-ui, sans-serif",
+      }}>
+        <div style={{
+          width: '32px',
+          height: '32px',
+          borderRadius: '50%',
+          border: '3px solid rgba(0, 242, 254, 0.2)',
+          borderTopColor: '#00f2fe',
+          animation: 'spin 0.8s linear infinite',
+          marginBottom: '16px',
+        }} />
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+        <span style={{ fontSize: '0.85rem', letterSpacing: '0.06em', textTransform: 'uppercase' }}>Loading GuardIAn…</span>
+      </div>
+    );
   }
   if (me === null) {
     return <div style={{ color: '#f87171', padding: '40px', fontFamily: 'system-ui, sans-serif', background: '#0b1020', minHeight: '100vh' }}>Could not load your account. Refresh to try again.</div>;
