@@ -153,7 +153,7 @@ def _sessions_summary(db, user_uuid: Optional[str] = None, limit: int = 50) -> L
             DBUser.user_uuid,
             DBUser.email,
             func.count(DBEvent.id).label("requests"),
-            func.count(DBEvent.id).filter(DBEvent.decision.in_(["redact", "block", "deny"])).label("violations"),
+            func.count(DBEvent.id).filter((DBEvent.pii_count > 0) | (DBEvent.decision == "deny")).label("violations"),
             func.coalesce(func.sum(DBEvent.prompt_tokens), 0).label("prompt_tokens"),
             func.coalesce(func.sum(DBEvent.completion_tokens), 0).label("completion_tokens"),
         )
@@ -232,7 +232,7 @@ async def session_agents(session_id: str, user: DBUser = Depends(get_current_use
         )
         violations = dict(
             db.query(DBEvent.agent_id, func.count(DBEvent.id))
-            .filter(DBEvent.session_id == session_id, DBEvent.decision.in_(["redact", "block"]))
+            .filter(DBEvent.session_id == session_id, DBEvent.pii_count > 0)
             .group_by(DBEvent.agent_id)
             .all()
         )
@@ -264,7 +264,7 @@ async def admin_list_users(admin: DBUser = Depends(require_admin)):
                 DBUser.created_at,
                 func.count(DBEvent.id).label("requests"),
                 func.coalesce(func.sum(DBEvent.pii_count), 0).label("pii_detected"),
-                func.count(DBEvent.id).filter(DBEvent.decision.in_(["redact", "block"])).label("violations"),
+                func.count(DBEvent.id).filter(DBEvent.pii_count > 0).label("violations"),
                 func.max(DBEvent.created_at).label("last_active"),
             )
             .outerjoin(DBSession, DBSession.user_id == DBUser.id)
@@ -442,13 +442,18 @@ def _event_row(e, findings, session_ext, agent_name, owner_uuid):
     decision = e.decision
     cats = sorted({cat for _, cat, _ in findings})
     reason = None
-    if decision == "allow" and not findings:
-        reason = "No PII found, sent as-is."
+    egress_count = getattr(e, "egress_pii_count", 0) or 0
+    if decision == "allow":
+        if egress_count > 0:
+            reason = f"Prompt clean ({e.prompt_tokens or 0} in-tokens). Model output intercepted with {egress_count} compliance finding(s) ({e.completion_tokens or 0} out-tokens counted, no user score penalty)."
+        elif not findings:
+            reason = "No PII found, sent as-is."
+        else:
+            reason = "Sent as-is under log-only policy."
     elif decision == "block":
-        egress_note = " (intercepted on model output)" if getattr(e, "egress_pii_count", 0) and getattr(e, "egress_pii_count", 0) > 0 else ""
-        reason = f"Blocked by policy{egress_note}: {e.pii_count} PII item(s) found ({', '.join(cats)})."
+        reason = f"Blocked by policy: {e.pii_count} PII item(s) found in prompt ({', '.join(cats)})."
     elif decision == "redact":
-        reason = f"Redacted {e.pii_count} PII item(s): {', '.join(cats)}."
+        reason = f"Redacted {e.pii_count} PII item(s) in prompt: {', '.join(cats)}."
     return {
         "event_id": e.id,
         "session_id": e.session_id,
@@ -693,7 +698,7 @@ async def user_daily(user_uuid: str, days: int = 14, user: DBUser = Depends(get_
             db.query(
                 day.label("day"),
                 func.count(DBEvent.id),
-                func.count(DBEvent.id).filter(DBEvent.decision.in_(["redact", "block"])),
+                func.count(DBEvent.id).filter(DBEvent.pii_count > 0),
             )
             .join(DBSession, DBSession.id == DBEvent.session_id)
             .join(DBUser, DBUser.id == DBSession.user_id)
@@ -743,6 +748,7 @@ async def get_user_trust_analytics(user_uuid: str, user: DBUser = Depends(get_cu
         base = (
             db.query(
                 DBEvent.decision,
+                DBEvent.kind,
                 DBEvent.action_mode,
                 DBEvent.prompt_tokens,
                 DBEvent.completion_tokens,
@@ -761,16 +767,24 @@ async def get_user_trust_analytics(user_uuid: str, user: DBUser = Depends(get_cu
         completion_tokens = sum(e.completion_tokens or 0 for e in all_events)
         total_tokens = prompt_tokens + completion_tokens
 
-        # --- rating (all simple, transparent proxies) ---
+        # Ingress-only rule (team decision): a user is judged on what the USER sent. PII in model output
+        # (egress), in agent replies and in tool results is not a user violation. Denied tool calls count.
+        def user_input(e):
+            return (e.kind or "prompt") == "prompt"
+
+        def violates(e):
+            return (user_input(e) and (e.pii_count or 0) > 0) or e.decision == "deny"
+
         total_requests = len(events)
-        clean_requests = sum(1 for e in events if e.decision == "allow")
-        redacted_requests = sum(1 for e in events if e.decision == "redact")
-        blocked_requests = sum(1 for e in events if e.decision == "block")
+        redacted_requests = sum(1 for e in events if user_input(e) and (e.pii_count or 0) > 0 and e.decision != "block")
+        blocked_requests = sum(1 for e in events if user_input(e) and (e.pii_count or 0) > 0 and e.decision == "block")
         denied_requests = sum(1 for e in events if e.decision == "deny")
         total_violations = redacted_requests + blocked_requests + denied_requests
+        clean_requests = total_requests - sum(1 for e in events if violates(e))
 
+        # Output tokens of every request count; a clean request keeps its completion (output) tokens
         window_tokens = sum((e.prompt_tokens or 0) + (e.completion_tokens or 0) for e in events)
-        clean_tokens = sum((e.prompt_tokens or 0) + (e.completion_tokens or 0) for e in events if e.decision == "allow")
+        clean_tokens = sum((e.prompt_tokens or 0) + (e.completion_tokens or 0) for e in events if not violates(e))
         violation_tokens = window_tokens - clean_tokens
 
         violation_frequency_pct = round((total_violations / total_requests) * 100, 2) if total_requests else 0.0

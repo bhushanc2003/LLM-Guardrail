@@ -427,9 +427,9 @@ export function RequestDetail({ eventId, authedFetch, onBack }) {
           </div>
           <div>
             <div style={label}>Delivered Response (Sanitized)</div>
-            <div style={{ ...box, color: C.allow, borderColor: e.decision === 'block' && e.egress_pii_count ? 'rgba(244, 63, 94, 0.4)' : 'rgba(16, 185, 129, 0.4)' }}>
-              {e.decision === 'block' && e.egress_pii_count
-                ? <span style={{ color: C.block, fontWeight: 700 }}>🚫 BLOCKED. Model output policy violation intercepted from reaching user.</span>
+            <div style={{ ...box, color: C.allow, borderColor: (e.action_mode === 'BLOCK' || e.decision === 'block') && e.egress_pii_count ? 'rgba(244, 63, 94, 0.4)' : 'rgba(16, 185, 129, 0.4)' }}>
+              {(e.action_mode === 'BLOCK' || e.decision === 'block') && e.egress_pii_count
+                ? <span style={{ color: C.block, fontWeight: 700 }}>🚫 BLOCKED. Model output policy violation intercepted from reaching user (output tokens tracked, user score unaffected).</span>
                 : (e.anonymized_response || e.original_response || <span style={{ color: C.faint }}>no change</span>)}
             </div>
           </div>

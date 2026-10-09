@@ -187,11 +187,9 @@ class AuditLogger:
             event.egress_pii_count = egress_count
 
             if egress_count > 0:
-                event.pii_count = (event.pii_count or 0) + egress_count
-                if action_mode == "BLOCK":
-                    event.decision = "block"
-                elif action_mode in ("REDACT", "HASH") and event.decision != "block":
-                    event.decision = "redact"
+                # Note: Model output (egress) violations are NOT added to event.pii_count
+                # and do NOT overwrite event.decision. User scores evaluate user input (ingress),
+                # while output tokens (completion_tokens) continue to be counted in usage.
 
                 for m in egress_matches:
                     placeholder = vault.get_or_create_placeholder(m.text, m.entity_type) if vault else f"[{m.entity_type}]"

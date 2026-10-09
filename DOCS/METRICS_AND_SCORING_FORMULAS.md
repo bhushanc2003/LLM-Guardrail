@@ -172,12 +172,16 @@ prompt_tokens = sum(e.prompt_tokens or 0 for e in events)
 completion_tokens = sum(e.completion_tokens or 0 for e in events)
 total_tokens = prompt_tokens + completion_tokens
 
-clean_requests = sum(1 for e in events if e.decision == "allow")
-redacted_requests = sum(1 for e in events if e.decision == "redact")
-blocked_requests = sum(1 for e in events if e.decision == "block")
+# User scores ONLY evaluate ingress (user prompt), ignoring model egress violations:
+# If (e.pii_count or 0) == 0, the user's prompt was clean and user committed NO violation.
+clean_requests = sum(1 for e in events if (e.pii_count or 0) == 0)
+redacted_requests = sum(1 for e in events if (e.pii_count or 0) > 0 and (e.decision == "redact" or e.action_mode in ("REDACT", "HASH")))
+blocked_requests = sum(1 for e in events if (e.pii_count or 0) > 0 and (e.decision == "block" or e.action_mode == "BLOCK"))
 total_violations = redacted_requests + blocked_requests
 
-clean_tokens = sum((e.prompt_tokens or 0) + (e.completion_tokens or 0) for e in events if e.decision == "allow")
+# Output tokens for all requests are counted in token usage;
+# Clean requests include their completion (output) tokens.
+clean_tokens = sum((e.prompt_tokens or 0) + (e.completion_tokens or 0) for e in events if (e.pii_count or 0) == 0)
 violation_tokens = total_tokens - clean_tokens
 
 # 2. Violation frequency
@@ -201,3 +205,24 @@ trust_penalty = (violation_frequency_pct * 0.6) + (blocked_requests * 4.0)
 volume_credit = min(10.0, total_requests * 0.3)
 authority_trust_score = round(max(5.0, min(100.0, base_trust - trust_penalty + volume_credit)), 1)
 ```
+
+---
+
+## 5. Response Checking (Egress Guardrail) Scoring Policy
+
+When the proxy inspects LLM output for HIPAA or DPDP compliance:
+
+### 1. Zero Score Penalty for Users
+- Egress violations stem from upstream context (vector search RAG retrieval, internal system instructions, or foundation model pre-training).
+- The user is **not penalized** for sensitive entities returned by the LLM.
+- Model output violations **do NOT increase** `violation_frequency_pct` or subtract `-4.0` points via `trust_penalty`.
+- The user's **Authority-Trust Score**, **Effective-Use Score**, and **Trust Tier** evaluate strictly the user's prompt (ingress) adherence.
+
+### 2. Output Token Accounting
+- For every request, including requests intercepted during egress response checking, **output tokens (`completion_tokens`) are recorded and counted in full**.
+- Both input tokens and output tokens appear in:
+  - Total Token Consumption (`total_tokens = prompt_tokens + completion_tokens`)
+  - Session-level input & output token breakdowns
+  - Per-request and per-model telemetry
+- If the user's prompt was clean (`pii_count == 0`), all tokens spent (prompt + completion) are credited to `clean_tokens`.
+
