@@ -1051,7 +1051,7 @@ function Dashboard() {
 
   useEffect(() => {
     if (!user) return;
-    setPageReady(false);
+    let isCancelled = false;
     const load = async () => {
       try {
         await authedFetch('/api/users/sync', {
@@ -1064,16 +1064,20 @@ function Dashboard() {
           }),
         });
         const res = await authedFetch('/api/me');
+        if (isCancelled) return;
         const nextMe = res.ok ? await res.json() : null;
         setMe(nextMe);
       } catch (e) {
-        setMe(null);
+        if (!isCancelled) setMe(null);
       } finally {
-        setPageReady(true);
+        if (!isCancelled) setPageReady(true);
       }
     };
     load();
-  }, [user, authedFetch]);
+    return () => {
+      isCancelled = true;
+    };
+  }, [user?.id, authedFetch]);
 
   const go = (page, params = {}) => {
     const url = navToUrl(page, params);
