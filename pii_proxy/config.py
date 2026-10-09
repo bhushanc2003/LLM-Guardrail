@@ -35,8 +35,13 @@ class Config:
         self._pii_action_mode = mode.upper()
         try:
             os.makedirs(os.path.dirname(CONFIG_FILE), exist_ok=True)
+            data = {}
+            if os.path.exists(CONFIG_FILE):
+                with open(CONFIG_FILE, "r") as f:
+                    data = json.load(f)
+            data["pii_action_mode"] = self._pii_action_mode
             with open(CONFIG_FILE, "w") as f:
-                json.dump({"pii_action_mode": self._pii_action_mode}, f, indent=2)
+                json.dump(data, f, indent=2)
         except Exception as e:
             print(f"Warning persisting config: {e}")
 

@@ -86,6 +86,7 @@ class DBUser(Base):
     action_mode = sa.Column(sa.Text, nullable=True)
     hipaa_enabled = sa.Column(sa.Boolean, nullable=True, default=True)
     dpdp_enabled = sa.Column(sa.Boolean, nullable=True, default=True)
+    rating_reset_at = sa.Column(sa.DateTime(timezone=True), nullable=True)  # admin reset: rating counts only data after this
     created_at = sa.Column(sa.DateTime(timezone=True), default=datetime.utcnow)
 
     sessions = relationship("DBSession", back_populates="user", cascade="all, delete-orphan")
@@ -171,9 +172,37 @@ class DBReceipt(Base):
     created_at = sa.Column(sa.DateTime(timezone=True), default=datetime.utcnow)
 
 
+class DBScoreLedger(Base):
+    __tablename__ = "score_ledger"
+
+    id = sa.Column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4()))
+    agent_id = sa.Column(UUID(as_uuid=False), sa.ForeignKey("agents.id", ondelete="CASCADE"), nullable=False)
+    delta = sa.Column(sa.Integer, nullable=False)
+    reason = sa.Column(sa.Text, nullable=False)
+    event_id = sa.Column(UUID(as_uuid=False), sa.ForeignKey("events.id", ondelete="SET NULL"), nullable=True)
+    created_at = sa.Column(sa.DateTime(timezone=True), default=datetime.utcnow)
+
+
 def init_db():
     """Create any missing tables. Existing v1 tables are left as they are."""
     Base.metadata.create_all(bind=engine)
+    # create_all never alters existing tables, so add columns introduced after the first deploy
+    # (safe to run every start-up; IF NOT EXISTS makes each one a no-op once present).
+    added_columns = (
+        ("users", "rating_reset_at", "timestamptz"),
+        ("users", "hipaa_enabled", "boolean"),
+        ("users", "dpdp_enabled", "boolean"),
+        ("events", "original_response", "text"),
+        ("events", "anonymized_response", "text"),
+        ("events", "egress_pii_count", "integer DEFAULT 0"),
+        ("pii_findings", "direction", "text DEFAULT 'ingress'"),
+    )
+    for table, col, typ in added_columns:
+        try:
+            with engine.begin() as conn:
+                conn.execute(sa.text(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col} {typ}"))
+        except Exception as e:
+            print(f"column check skipped for {table}.{col}: {e}")
 
 
 def get_db_session():

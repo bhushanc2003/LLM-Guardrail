@@ -43,16 +43,24 @@ class PIIDetector:
         self._init_presidio()
 
     def _init_presidio(self):
-        """Try initializing Microsoft Presidio / SpaCy if enabled via env var."""
+        """NER pass (names / places) using Presidio on spaCy's small English model. Off unless ENABLE_PRESIDIO=true."""
         self.presidio_analyzer = None
         import os
         if os.getenv("ENABLE_PRESIDIO", "false").lower() == "true":
             try:
-                import spacy
-                if spacy.util.is_package("en_core_web_sm"):
-                    from presidio_analyzer import AnalyzerEngine
-                    self.presidio_analyzer = AnalyzerEngine()
-            except Exception:
+                from presidio_analyzer import AnalyzerEngine
+                from presidio_analyzer.nlp_engine import NlpEngineProvider
+                nlp = NlpEngineProvider(nlp_configuration={
+                    "nlp_engine_name": "spacy",
+                    "models": [{"lang_code": "en", "model_name": "en_core_web_sm"}],
+                }).create_engine()
+                # Only the NER component is needed; dropping the parser/lemmatizer/tagger makes it ~2x faster.
+                for pipe in ("parser", "lemmatizer", "attribute_ruler", "senter", "tagger"):
+                    if pipe in nlp.nlp["en"].pipe_names:
+                        nlp.nlp["en"].disable_pipe(pipe)
+                self.presidio_analyzer = AnalyzerEngine(nlp_engine=nlp, supported_languages=["en"])
+            except Exception as e:
+                print(f"Presidio disabled: {e}")
                 self.presidio_analyzer = None
 
     def _compile_regexes(self):
@@ -245,7 +253,28 @@ class PIIDetector:
             r'\b[A-Z]{4}0[A-Z0-9]{6}\b'
         )
 
-    def detect(self, text: str, check_hipaa: bool = True, check_dpdp: bool = True) -> List[PIIMatch]:
+        # --- additions for the GuardRailBench typed values (generic forms, DPDP) ---
+        # any handle@provider without a dot after it (UPI ids like typed.user@examplepay); emails need a dotted domain
+        self.regex_upi_generic = re.compile(r'\b[A-Za-z0-9._-]{2,}@[A-Za-z]{2,}\b(?!\.)')
+        self.regex_passport_bare = re.compile(r'\bpassport\s+[A-Z][0-9]{7}\b|\b[A-Z][0-9]{7}\b', re.IGNORECASE)
+        self.regex_bank_digits = re.compile(r'(?:Account|A/C|Acct)[^\d\n]{0,20}\d{9,18}\b|\b\d{12}\b', re.IGNORECASE)
+        self.regex_emp_bare = re.compile(r'\bEMP-?\d{3,8}\b', re.IGNORECASE)
+
+        # Bare capitalised name runs, e.g. "Jane Smith" inside raw record text (no "Patient"/"Dr." cue).
+        self.regex_name_run = re.compile(r'\b[A-Z][a-z]+(?:\s+(?:[A-Z]\.|[A-Z][a-z]+)){1,3}\b')
+        self.NAME_STOP = {w.lower() for w in '''
+            The A An This That These Those There Here What Which Who When Where Why How Please Find Search Send Email Mail
+            Look Get Show Tell Give Check Read Update Delete Schedule Submit Book Cancel Ask Answer Note Is Are Was Were
+            Do Does Did Can Could Should Would Will Stage Type Medical Record Records Patient Patients Doctor Clinic
+            Hospital Insurance Appointment Appointments Health Care Policy Privacy Notice Billing Claim Claims Lab Results
+            Guide Refill Process Visiting Hours Monday Tuesday Wednesday Thursday Friday Saturday Sunday January February
+            March April May June July August September October November December Mg Daily Twice Disorder Cancer Breast
+            Infection Diabetes Hypertension Carcinoma Ductal Invasive Bipolar Asymptomatic Dear Hello Hi Thanks Thank
+            Regards Reminder Subject From To Cc Re Fwd In On At For Of And Or If It Its Our Your My We You They He She
+            Tamoxifen Ondansetron Metoprolol Lithium Quetiapine Lorazepam Biktarvy IGNORE Name Phone Number Address
+        '''.split()}
+
+    def detect(self, text: str, check_hipaa: bool = True, check_dpdp: bool = True, aggressive_names: bool = False) -> List[PIIMatch]:
         """
         Detect PII entities in text based on active compliance frameworks (HIPAA / DPDP).
         If both are False, returns empty list (pass-through).
@@ -335,6 +364,23 @@ class PIIDetector:
             _add(self.regex_age_gender, "AGE_GENDER", 3, 0.90, "DPDP")
             _add(self.regex_gps, "GEO_DATA", 2, 0.95, "DPDP")
             _add(self.regex_ifsc, "ACCOUNT_NUMBER", 10, 0.92, "DPDP")
+            _add(self.regex_upi_generic, "UPI_ID", 10, 0.92, "DPDP")
+            _add(self.regex_passport_bare, "PASSPORT", 11, 0.93, "DPDP")
+            _add(self.regex_bank_digits, "ACCOUNT_NUMBER", 10, 0.96, "DPDP")
+            _add(self.regex_emp_bare, "EMPLOYEE_ID", 11, 0.94, "DPDP")
+
+        # Bare-name heuristic (opt-in, used by the hooks): runs of 2-4 capitalised words, minus a stop list
+        if aggressive_names:
+            for m in self.regex_name_run.finditer(text):
+                tokens = [(t.group(0), t.start(), t.end()) for t in re.finditer(r'\S+', m.group(0))]
+                while tokens and tokens[0][0].lower() in self.NAME_STOP:
+                    tokens.pop(0)
+                while tokens and tokens[-1][0].lower() in self.NAME_STOP:
+                    tokens.pop()
+                if len(tokens) < 2 or any(t[0].lower() in self.NAME_STOP for t in tokens):
+                    continue
+                start, end = m.start() + tokens[0][1], m.start() + tokens[-1][2]
+                matches.append(PIIMatch("NAME", 1, self.CATEGORIES[1], start, end, text[start:end], 0.85, "SHARED"))
 
         # Optional Presidio NLP
         if self.presidio_analyzer:

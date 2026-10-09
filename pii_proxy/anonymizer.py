@@ -50,12 +50,13 @@ class PIIAnonymizer:
         vault: PIISessionVault,
         mode: str = "REDACT",
         check_hipaa: bool = True,
-        check_dpdp: bool = True
+        check_dpdp: bool = True,
+        aggressive_names: bool = False
     ) -> Tuple[str, List[PIIMatch]]:
         """
         Process text, replace detected PII based on mode, and return anonymized text + list of matches.
         """
-        matches = self.detector.detect(text, check_hipaa=check_hipaa, check_dpdp=check_dpdp)
+        matches = self.detector.detect(text, check_hipaa=check_hipaa, check_dpdp=check_dpdp, aggressive_names=aggressive_names)
         if not matches:
             return text, []
 

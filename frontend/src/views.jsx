@@ -148,8 +148,9 @@ export function LogsView({ authedFetch, uuid = null, initialEvent = null, onOpen
   const cutoff = cutoffs[range] ? Date.now() - cutoffs[range] : 0;
   const q = search.trim().toLowerCase();
   const shown = rows.filter(r => {
-    if (decision === 'violations' && r.decision === 'allow') return false;
-    if (decision !== 'all' && decision !== 'violations' && r.decision !== decision) return false;
+    const d = (r.decision || (r.action_mode === 'HASH' && r.decision !== 'allow' ? 'hash' : 'redact')).toLowerCase();
+    if (decision === 'violations' && d === 'allow') return false;
+    if (decision !== 'all' && decision !== 'violations' && d !== decision) return false;
     if (userFilter && r.user_uuid !== userFilter) return false;
     if (cutoff && (!r.created_at || new Date(r.created_at).getTime() < cutoff)) return false;
     if (q) {
@@ -169,9 +170,10 @@ export function LogsView({ authedFetch, uuid = null, initialEvent = null, onOpen
         <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search prompt, category, session or user" style={{ ...inputStyle, flex: '1 1 260px' }} />
         <select value={decision} onChange={e => setDecision(e.target.value)} style={inputStyle}>
           <option value="all">All decisions</option>
-          <option value="violations">Violations (redact + block)</option>
+          <option value="violations">Violations (redact + hash + block)</option>
           <option value="allow">Allowed</option>
           <option value="redact">Redacted</option>
+          <option value="hash">Hashed</option>
           <option value="block">Blocked</option>
         </select>
         {!uuid && (
@@ -209,7 +211,167 @@ export function LogsView({ authedFetch, uuid = null, initialEvent = null, onOpen
 
 // ---------- Sessions ----------
 
-export function SessionsView({ authedFetch, uuid = null, showUser = false, initialSession = null, title = null }) {
+// Categorical series colors, fixed order (dark-surface steps of the validated reference palette).
+const SERIES = ['#3987e5', '#d95926', '#199e70', '#c98500', '#d55181', '#008300', '#9085e9', '#e66767'];
+
+function ScoreChart({ agents }) {
+  const [tip, setTip] = useState(null);
+  const W = 760, H = 250, L = 38, R = agents.length <= 4 ? 110 : 16, T = 14, B = 30;
+  // every score change across all agents, in time order; x = position in that sequence
+  const events = [];
+  agents.forEach((a, ai) => a.trend.slice(1).forEach(t => events.push({ ...t, agent: a.agent_name, ai })));
+  events.sort((x, y) => (x.t || '').localeCompare(y.t || ''));
+  events.forEach((e, i) => { e.x = i + 1; });
+  const N = Math.max(events.length, 1);
+  const X = v => L + (v / N) * (W - L - R);
+  const Y = v => T + (1 - v / 100) * (H - T - B);
+
+  const lines = agents.map((a, ai) => {
+    const pts = [{ x: 0, score: a.trend[0].score }, ...events.filter(e => e.ai === ai).map(e => ({ x: e.x, score: e.score }))];
+    pts.push({ x: N, score: a.score });
+    let d = `M${X(pts[0].x)},${Y(pts[0].score)}`;
+    for (let i = 1; i < pts.length; i++) d += ` L${X(pts[i].x)},${Y(pts[i - 1].score)} L${X(pts[i].x)},${Y(pts[i].score)}`;
+    return { name: a.agent_name, color: SERIES[ai % SERIES.length], d, end: pts[pts.length - 1].score };
+  });
+  const gates = [[80, 'high-risk tools need 80'], [50, 'medium need 50'], [20, 'below 20 blocks output']];
+
+  return (
+    <div style={{ position: 'relative' }}>
+      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto', display: 'block' }} role="img"
+        aria-label="Authority score per agent over the session">
+        {[0, 20, 40, 60, 80, 100].map(v => (
+          <g key={v}>
+            <line x1={L} x2={W - R} y1={Y(v)} y2={Y(v)} stroke="rgba(148,163,184,0.15)" strokeWidth="1" />
+            <text x={L - 8} y={Y(v) + 4} textAnchor="end" fontSize="11" fill="#94a3b8">{v}</text>
+          </g>
+        ))}
+        {gates.map(([v, label]) => (
+          <g key={v}>
+            <line x1={L} x2={W - R} y1={Y(v)} y2={Y(v)} stroke="rgba(148,163,184,0.45)" strokeWidth="1" strokeDasharray="4 4" />
+            <text x={W - R - 4} y={Y(v) - 4} textAnchor="end" fontSize="10" fill="#94a3b8">{label}</text>
+          </g>
+        ))}
+        <text x={L} y={H - 8} fontSize="11" fill="#94a3b8">session start</text>
+        <text x={W - R} y={H - 8} textAnchor="end" fontSize="11" fill="#94a3b8">score changes, in order →</text>
+        {lines.map(l => <path key={l.name} d={l.d} fill="none" stroke={l.color} strokeWidth="2" strokeLinejoin="round" />)}
+        {events.map((e, i) => {
+          const color = SERIES[e.ai % SERIES.length];
+          const cy = Y(e.score), cx = X(e.x);
+          const common = {
+            onMouseEnter: () => setTip({ x: (cx / W) * 100, y: (cy / H) * 100, e }),
+            onMouseLeave: () => setTip(null),
+            style: { cursor: 'default' },
+          };
+          return e.delta < 0
+            ? <circle key={i} cx={cx} cy={cy} r="5" fill={color} stroke="#0c1327" strokeWidth="2" {...common} />
+            : <rect key={i} x={cx - 4.5} y={cy - 4.5} width="9" height="9" transform={`rotate(45 ${cx} ${cy})`} fill={color} stroke="#0c1327" strokeWidth="2" {...common} />;
+        })}
+        {agents.length <= 4 && lines.map(l => (
+          <text key={l.name} x={W - R + 8} y={Y(l.end) + 4} fontSize="11" fill="#e2e8f0">{l.name}</text>
+        ))}
+      </svg>
+      {tip && (
+        <div style={{
+          position: 'absolute', left: `${Math.min(tip.x, 70)}%`, top: `${Math.max(tip.y - 14, 0)}%`, transform: 'translate(8px, -100%)',
+          background: '#0c1327', border: `1px solid ${C.border}`, borderRadius: '8px', padding: '8px 10px',
+          fontSize: '0.8rem', color: '#e2e8f0', pointerEvents: 'none', maxWidth: '320px', boxShadow: '0 8px 24px rgba(0,0,0,0.5)', zIndex: 5,
+        }}>
+          <div style={{ fontFamily: mono, color: SERIES[tip.e.ai % SERIES.length], fontWeight: 700 }}>{tip.e.agent}</div>
+          <div>{tip.e.delta > 0 ? '+' : ''}{tip.e.delta} → score {tip.e.score}</div>
+          <div style={{ color: C.muted }}>{tip.e.reason}</div>
+        </div>
+      )}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', marginTop: '8px', fontSize: '0.8rem', color: '#cbd5e1' }}>
+        {lines.map(l => (
+          <span key={l.name} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+            <span style={{ width: '10px', height: '10px', borderRadius: '50%', background: l.color, display: 'inline-block' }} />
+            <span style={{ fontFamily: mono }}>{l.name}</span>
+          </span>
+        ))}
+        <span style={{ color: C.faint }}>● penalty · ◆ reward</span>
+      </div>
+    </div>
+  );
+}
+
+function AgentPanel({ data, requestCount, violations }) {
+  if (!data || !data.agents) return null;
+  const agents = data.agents;
+  const direct = agents.length <= 1 && agents.every(a => !a.tool_calls && a.trend.length <= 1);
+  const wrap = { marginTop: '22px', paddingTop: '18px', borderTop: `1px solid ${C.border}` };
+  const heading = { color: C.muted, fontSize: '0.8rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '10px' };
+
+  if (direct) {
+    return (
+      <div style={wrap}>
+        <div style={heading}>How the agents performed</div>
+        <div style={{ padding: '12px 14px', borderRadius: '8px', background: 'rgba(56,189,248,0.08)', borderLeft: '3px solid #38bdf8', color: '#e2e8f0', fontSize: '0.9rem', lineHeight: 1.5 }}>
+          Direct LLM session: no tools and no sub-agents, so there is no authority score to show.
+          Compliance results are in the requests above ({requestCount} request{requestCount === 1 ? '' : 's'}, {violations} redacted or blocked).
+        </div>
+      </div>
+    );
+  }
+
+  const colorFor = sc => (sc >= 70 ? C.allow : sc >= 40 ? C.redact : C.block);
+  const roots = agents.filter(a => !a.parent_agent_id);
+  const ordered = [];
+  const add = (a, depth) => { ordered.push({ ...a, depth }); agents.filter(c => c.parent_agent_id === a.agent_id).forEach(c => add(c, depth + 1)); };
+  roots.forEach(a => add(a, 0));
+  agents.forEach(a => { if (!ordered.find(o => o.agent_id === a.agent_id)) ordered.push({ ...a, depth: 0 }); });
+
+  return (
+    <div style={wrap}>
+      <div style={heading}>How the agents performed</div>
+      <div style={{
+        padding: '10px 14px', marginBottom: '14px', borderRadius: '8px', fontSize: '0.9rem', color: '#f1f5f9',
+        background: data.verdict.allowed ? 'rgba(16,185,129,0.08)' : 'rgba(244,63,94,0.1)',
+        borderLeft: `3px solid ${data.verdict.allowed ? C.allow : C.block}`,
+      }}>
+        Session verdict: <b>{data.verdict.allowed ? 'output allowed' : 'output blocked'}</b> · {data.verdict.reason}
+      </div>
+      <ScoreChart agents={agents} />
+      <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '16px' }}>
+        <thead>
+          <tr>
+            <th style={cellTh}>Agent</th>
+            <th style={cellTh}>Authority score</th>
+            <th style={{ ...cellTh, textAlign: 'right' }}>Tool calls</th>
+            <th style={{ ...cellTh, textAlign: 'right' }}>Denied</th>
+            <th style={{ ...cellTh, textAlign: 'right' }}>Violations</th>
+          </tr>
+        </thead>
+        <tbody>
+          {ordered.map(a => {
+            const c = colorFor(a.effective_score);
+            return (
+              <tr key={a.agent_id}>
+                <td style={{ ...cellTd, fontFamily: mono, paddingLeft: `${12 + a.depth * 22}px` }}>
+                  {a.depth > 0 && <span style={{ color: C.faint }}>└ </span>}{a.agent_name}
+                  {a.parent_agent_name && <span style={{ color: C.faint, fontSize: '0.75rem' }}> (from {a.parent_agent_name})</span>}
+                </td>
+                <td style={cellTd}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <div style={{ width: '90px', height: '8px', borderRadius: '4px', background: 'rgba(148,163,184,0.2)', overflow: 'hidden' }}>
+                      <div style={{ width: `${a.effective_score}%`, height: '100%', background: c }} />
+                    </div>
+                    <span style={{ fontFamily: mono, color: '#e2e8f0', fontWeight: 700 }}>{a.effective_score}</span>
+                    {a.effective_score !== a.score && <span style={{ color: C.faint, fontSize: '0.75rem' }}>own {a.score}, capped by parent</span>}
+                  </div>
+                </td>
+                <td style={{ ...cellTd, textAlign: 'right' }}>{a.tool_calls}</td>
+                <td style={{ ...cellTd, textAlign: 'right', color: a.denied_calls ? C.block : C.muted }}>{a.denied_calls}</td>
+                <td style={{ ...cellTd, textAlign: 'right', color: a.violations ? C.redact : C.muted }}>{a.violations}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+export function SessionsView({ authedFetch, uuid = null, showUser = false, initialSession = null, title = null, onOpenChange = null }) {
   const [limit, setLimit] = useState(20);
   const [sessions, setSessions] = useState([]);
   const [selected, setSelected] = useState(initialSession);
@@ -218,8 +380,12 @@ export function SessionsView({ authedFetch, uuid = null, showUser = false, initi
   const [search, setSearch] = useState('');
   const [violationsOnly, setViolationsOnly] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [agentData, setAgentData] = useState(null);
+  const [receiptCheck, setReceiptCheck] = useState(null);
 
   useEffect(() => { setSelected(initialSession); setEventId(null); }, [initialSession]);
+  useEffect(() => { setReceiptCheck(null); }, [selected?.session_id]);
+  useEffect(() => { if (onOpenChange) onOpenChange(!!selected || !!eventId); }, [selected, eventId]); // eslint-disable-line
 
   usePoll(async (isCancelled) => {
     const r = await authedFetch(uuid ? `/api/users/${uuid}/sessions` : '/api/admin/sessions');
@@ -233,6 +399,8 @@ export function SessionsView({ authedFetch, uuid = null, showUser = false, initi
     if (!selected) return;
     const r = await authedFetch(`/api/sessions/${selected.session_id}/events`);
     if (r.ok && !isCancelled()) setEvents(await r.json());
+    const a = await authedFetch(`/api/sessions/${selected.session_id}/agent-scores`);
+    if (a.ok && !isCancelled()) setAgentData(await a.json());
   }, [selected?.session_id, authedFetch]);
 
   if (eventId) {
@@ -257,15 +425,57 @@ export function SessionsView({ authedFetch, uuid = null, showUser = false, initi
           </span>
         }
       >
+        <button
+          onClick={() => setSelected(null)}
+          style={{ background: 'rgba(255, 255, 255, 0.05)', border: `1px solid ${C.border}`, color: C.accent, padding: '7px 14px', borderRadius: '8px', cursor: 'pointer', marginBottom: '16px', fontWeight: 600, fontSize: '0.86rem' }}
+        >
+          ← Back to sessions
+        </button>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '12px', marginBottom: '18px' }}>
           <Kpi label="Requests" value={events.length} />
           <Kpi label="Input Tokens" value={promptTokens.toLocaleString()} hint="Prompt payload" />
           <Kpi label="Output Tokens" value={completionTokens.toLocaleString()} hint="Completion text" />
           <Kpi label="Total Tokens" value={totalTokens.toLocaleString()} />
         </div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
+          <button
+            onClick={async () => {
+              setReceiptCheck({ loading: true });
+              const r = await authedFetch(`/api/sessions/${selected.session_id}/receipts/verify`);
+              setReceiptCheck(r.ok ? await r.json() : { ok: false, reason: `request failed (${r.status})` });
+            }}
+            style={{ ...btn, background: 'transparent', color: C.accent, border: `1px solid ${C.border}` }}
+          >
+            Verify receipts
+          </button>
+          <button
+            onClick={async () => {
+              const r = await authedFetch(`/api/sessions/${selected.session_id}/receipts`);
+              if (!r.ok) return;
+              const blob = new Blob([JSON.stringify(await r.json(), null, 2)], { type: 'application/json' });
+              const a = document.createElement('a');
+              a.href = URL.createObjectURL(blob);
+              a.download = `receipts-${selected.external_id || selected.session_id}.json`;
+              a.click();
+              URL.revokeObjectURL(a.href);
+            }}
+            style={{ ...btn, background: 'transparent', color: C.accent, border: `1px solid ${C.border}` }}
+          >
+            Export receipts (JSON)
+          </button>
+          {receiptCheck && !receiptCheck.loading && (
+            <span style={{ fontSize: '0.86rem', fontWeight: 600, color: receiptCheck.ok ? C.allow : C.block }}>
+              {receiptCheck.ok
+                ? `✓ Chain intact: ${receiptCheck.receipts} receipt${receiptCheck.receipts === 1 ? '' : 's'}, none altered`
+                : `✗ Chain broken${receiptCheck.broken_at_seq ? ` at receipt #${receiptCheck.broken_at_seq}` : ''}: ${receiptCheck.reason}`}
+            </span>
+          )}
+          {receiptCheck?.loading && <span style={{ color: C.muted, fontSize: '0.86rem' }}>Checking…</span>}
+        </div>
         <ScrollBox maxHeight={600}>
           <RequestTable rows={events} onOpen={setEventId} empty="No requests in this session." />
         </ScrollBox>
+        <AgentPanel data={agentData} requestCount={events.length} violations={events.filter(e => e.decision === 'redact' || e.decision === 'block').length} />
       </Card>
     );
   }
@@ -655,6 +865,7 @@ export function UserView({ authedFetch, user, onOpenEvent }) {
   const [stats, setStats] = useState(null);
   const [tokens, setTokens] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [sessionOpen, setSessionOpen] = useState(false);
 
   usePoll(async (isCancelled) => {
     const [s, t] = await Promise.all([
@@ -674,17 +885,22 @@ export function UserView({ authedFetch, user, onOpenEvent }) {
   const d = stats?.decision_counts || {};
   return (
     <>
+      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+        <button onClick={() => resetRating(authedFetch, user)} style={{ ...btn, background: 'transparent', color: C.block, border: `1px solid ${C.border}` }}>
+          Reset rating
+        </button>
+      </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '14px' }}>
         <Kpi label="Requests" value={stats?.total_requests ?? 0} />
-        <Kpi label="Violations" value={(d.redact || 0) + (d.block || 0)} hint={`${d.redact || 0} redacted · ${d.block || 0} blocked`} />
+        <Kpi label="Violations" value={(d.redact || 0) + (d.block || 0) + (d.deny || 0)} hint={`${d.redact || 0} redacted · ${d.block || 0} blocked · ${d.deny || 0} denied`} />
         <Kpi label="PII found" value={stats?.total_pii_detected ?? 0} />
         <Kpi label="Tokens" value={(tokens?.total_tokens ?? 0).toLocaleString()} />
         <Kpi label="Average tokens per session" value={Math.round(tokens?.average_tokens_per_session ?? 0).toLocaleString()} />
         <Kpi label="Average latency" value={`${Math.round(stats?.avg_latency_ms ?? 0)} ms`} />
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '18px' }}>
-        <Card title="Sessions"><SessionsView authedFetch={authedFetch} uuid={user.user_uuid} /></Card>
-        <Card title="Categories found"><Bars items={Object.entries(stats?.category_counts || {}).map(([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value)} empty="No PII found for this user." /></Card>
+      <div style={{ display: 'grid', gridTemplateColumns: sessionOpen ? 'minmax(0, 1fr)' : 'minmax(0, 1fr) minmax(0, 1fr)', gap: '18px' }}>
+        <Card title="Sessions"><SessionsView authedFetch={authedFetch} uuid={user.user_uuid} onOpenChange={setSessionOpen} /></Card>
+        {!sessionOpen && <Card title="Categories found"><Bars items={Object.entries(stats?.category_counts || {}).map(([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value)} empty="No PII found for this user." /></Card>}
       </div>
       <LogsView authedFetch={authedFetch} uuid={user.user_uuid} onOpenSession={null} />
     </>
@@ -854,9 +1070,9 @@ export function OverviewUser({ authedFetch, me, onOpenEvent }) {
                   style={{ display: 'grid', gridTemplateColumns: '150px 84px 1fr', gap: '12px', alignItems: 'center', textAlign: 'left', background: 'transparent', border: 'none', borderBottom: `1px solid ${C.border}`, padding: '11px 6px', cursor: 'pointer', color: C.text }}
                 >
                   <span style={{ color: C.muted, fontSize: '0.82rem' }}>{v.created_at ? new Date(v.created_at).toLocaleString() : ''}</span>
-                  <DecisionChip decision={v.decision} />
+                  <DecisionChip decision={v.decision || (v.action_mode === 'HASH' && v.decision !== 'allow' ? 'hash' : v.decision)} />
                   <span style={{ fontSize: '0.88rem' }}>
-                    {v.decision === 'block' ? 'Blocked, not sent' : 'Redacted'}: {(v.categories_found || []).join(', ') || 'PII'}
+                    {v.decision === 'block' ? 'Blocked, not sent' : (v.decision === 'hash' || v.action_mode === 'HASH' ? 'Hashed' : 'Redacted')}: {(v.categories_found || []).join(', ') || 'PII'}
                   </span>
                 </button>
               ))}
@@ -929,7 +1145,7 @@ export function OverviewAdmin({ authedFetch, onOpenEvent, onOpenUser }) {
                     <span style={{ color: C.text }}>{v.user_email}</span>
                     <span style={{ color: C.muted }}> · {(v.categories_found || []).join(', ') || 'PII'}</span>
                   </span>
-                  <DecisionChip decision={v.decision} />
+                  <DecisionChip decision={v.decision || (v.action_mode === 'HASH' && v.decision !== 'allow' ? 'hash' : v.decision)} />
                 </button>
               ))}
             </div>
@@ -1075,11 +1291,63 @@ export function TestView({ authedFetch }) {
   );
 }
 
+function UserPicker({ users, value, onChange }) {
+  const [text, setText] = useState('');
+  const [open, setOpen] = useState(false);
+  const current = users.find(u => u.user_uuid === value);
+  const q = text.trim().toLowerCase();
+  const matches = users
+    .filter(u => !q || u.email.toLowerCase().includes(q) || (u.name || '').toLowerCase().includes(q))
+    .slice(0, 8);
+  return (
+    <div style={{ position: 'relative', minWidth: '260px' }}>
+      <input
+        value={open ? text : (current ? current.email : text)}
+        placeholder="Search user by name or email"
+        autoComplete="off"
+        name="inspect-user-search"
+        onFocus={() => { setOpen(true); setText(''); }}
+        onChange={e => { setText(e.target.value); setOpen(true); }}
+        onBlur={() => setTimeout(() => setOpen(false), 150)}
+        style={{ ...inputStyle, width: '100%' }}
+      />
+      {open && (
+        <div style={{
+          position: 'absolute', top: '100%', right: 0, left: 0, zIndex: 20, marginTop: '4px',
+          background: '#0c1327', border: `1px solid ${C.border}`, borderRadius: '8px', maxHeight: '280px', overflowY: 'auto', boxShadow: '0 12px 32px rgba(0,0,0,0.6)',
+        }}>
+          {matches.length === 0 && <div style={{ padding: '10px 12px', color: C.muted, fontSize: '0.85rem' }}>No users match.</div>}
+          {matches.map(u => (
+            <div
+              key={u.user_uuid}
+              onMouseDown={e => { e.preventDefault(); onChange(u.user_uuid); setOpen(false); setText(''); }}
+              style={{ padding: '8px 12px', cursor: 'pointer', fontSize: '0.85rem', display: 'flex', justifyContent: 'space-between', gap: '12px' }}
+              onMouseEnter={e => (e.currentTarget.style.background = '#16213a')}
+              onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+            >
+              <span>{u.email}</span>
+              <span style={{ color: u.role === 'admin' ? C.redact : C.muted }}>{u.role}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+async function resetRating(authedFetch, user, onDone) {
+  if (!window.confirm(`Reset rating for ${user.email}?\n\nHistory is kept. Violations, trust and effective-use will count only from now on.`)) return;
+  const r = await authedFetch(`/api/admin/users/${user.user_uuid}/reset-rating`, { method: 'POST' });
+  if (r.ok) onDone && onDone();
+  else window.alert('Reset failed');
+}
+
 export function TrustAnalyticsView({ authedFetch, me, isAdmin, initialUuid }) {
   const [selectedUuid, setSelectedUuid] = useState(initialUuid || me?.user_uuid || '');
   const [data, setData] = useState(null);
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     if (isAdmin) {
@@ -1109,7 +1377,7 @@ export function TrustAnalyticsView({ authedFetch, me, isAdmin, initialUuid }) {
         if (active) setLoading(false);
       });
     return () => { active = false; };
-  }, [selectedUuid, me?.user_uuid, authedFetch]);
+  }, [selectedUuid, me?.user_uuid, authedFetch, reloadKey]);
 
   const tokens = data?.tokens || {};
   const metrics = data?.metrics || {};
@@ -1128,8 +1396,9 @@ export function TrustAnalyticsView({ authedFetch, me, isAdmin, initialUuid }) {
   const blockedRequests = metrics.blocked_requests || 0;
   const totalViolations = metrics.total_violations || 0;
   const violationFreq = metrics.violation_frequency_pct || 0;
-  const effectiveUse = metrics.effective_use_score || 0;
-  const authorityTrust = metrics.authority_trust_score || 0;
+  const effectiveUse = metrics.effective_use_score ?? null;
+  const authorityTrust = metrics.authority_trust_score ?? 0;
+  const composite = metrics.composite_rating ?? authorityTrust;
   const trustTier = metrics.trust_tier || 'Tier 2: Trusted Operator';
   const trustColor = metrics.trust_color || '#00f2fe';
 
@@ -1150,6 +1419,8 @@ export function TrustAnalyticsView({ authedFetch, me, isAdmin, initialUuid }) {
         border: `1px solid ${C.border}`,
         borderRadius: '12px',
         backdropFilter: 'blur(16px)',
+        position: 'relative',
+        zIndex: 50,
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <div style={{
@@ -1192,7 +1463,7 @@ export function TrustAnalyticsView({ authedFetch, me, isAdmin, initialUuid }) {
                 border: '1px solid rgba(168, 85, 247, 0.3)',
                 fontWeight: 600,
               }}>
-                MODE: {data?.action_mode || 'REDACT'}
+                MODE: {data?.action_mode || me?.action_mode || 'DEFAULT'}
               </span>
             </div>
             <div style={{ fontSize: '0.78rem', color: C.faint, fontFamily: mono, marginTop: '2px' }}>
@@ -1204,20 +1475,29 @@ export function TrustAnalyticsView({ authedFetch, me, isAdmin, initialUuid }) {
         {isAdmin && users.length > 0 && (
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <span style={{ fontSize: '0.82rem', color: C.muted }}>Inspect User:</span>
-            <select
-              value={selectedUuid}
-              onChange={e => setSelectedUuid(e.target.value)}
-              style={{ ...inputStyle, minWidth: '220px', cursor: 'pointer' }}
-            >
-              {users.map(u => (
-                <option key={u.user_uuid} value={u.user_uuid}>
-                  {u.email} ({u.role})
-                </option>
-              ))}
-            </select>
+            <UserPicker users={users} value={selectedUuid} onChange={setSelectedUuid} />
           </div>
         )}
       </div>
+
+      {!loading && data && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: '12px', padding: '12px 18px', background: C.surface, border: `1px solid ${C.border}`, borderRadius: '12px' }}>
+          <div style={{ fontSize: '0.88rem', color: C.muted }}>
+            Composite rating{' '}
+            <b style={{ color: trustColor, fontFamily: mono, fontSize: '1.1rem' }}>{metrics.composite_rating ?? '—'}</b> / 100
+            <span style={{ marginLeft: '10px', color: C.faint }}>
+              = 40% authority-trust + 30% (100 − smoothed violation %) + 30% effective use · redaction counts half, block/deny full, 5 virtual clean requests smooth small samples
+              {metrics.rating_since ? ` · counted since ${new Date(metrics.rating_since).toLocaleString()}` : ' · all history'}
+            </span>
+          </div>
+          {isAdmin && (
+            <button onClick={() => resetRating(authedFetch, { user_uuid: selectedUuid || me?.user_uuid, email: data.email }, () => setReloadKey(k => k + 1))}
+              style={{ ...btn, background: 'transparent', color: C.block, border: `1px solid ${C.border}` }}>
+              Reset rating
+            </button>
+          )}
+        </div>
+      )}
 
       {loading ? (
         <Loader text="Calculating token metrics & authority-trust matrix…" />
@@ -1238,11 +1518,11 @@ export function TrustAnalyticsView({ authedFetch, me, isAdmin, initialUuid }) {
             }}>
               <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '3px', background: `linear-gradient(90deg, ${trustColor}, #a855f7)` }} />
               <div style={{ color: C.muted, fontSize: '0.8rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                Authority-Trust Score
+                Overall Rating
               </div>
               <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', margin: '12px 0 8px 0' }}>
                 <span style={{ fontSize: '2.1rem', fontWeight: 800, color: trustColor, fontFamily: mono }}>
-                  {authorityTrust}
+                  {composite}
                 </span>
                 <span style={{ fontSize: '1rem', color: C.faint }}>/ 100</span>
               </div>
@@ -1265,7 +1545,7 @@ export function TrustAnalyticsView({ authedFetch, me, isAdmin, initialUuid }) {
                 <div style={{ width: `${Math.min(100, Math.max(0, authorityTrust))}%`, height: '100%', background: `linear-gradient(90deg, #f43f5e, #f59e0b 50%, ${trustColor} 85%)` }} />
               </div>
               <div style={{ fontSize: '0.74rem', color: C.faint, marginTop: '8px' }}>
-                Algorithmic zero-risk classification & compliance history
+                Authority-trust {authorityTrust} · violations {violationFreq}% · effective use {effectiveUse == null ? 'n/a' : `${effectiveUse}%`}
               </div>
             </div>
 
@@ -1321,16 +1601,16 @@ export function TrustAnalyticsView({ authedFetch, me, isAdmin, initialUuid }) {
               </div>
               <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', margin: '12px 0 8px 0' }}>
                 <span style={{ fontSize: '2.1rem', fontWeight: 800, color: '#00f2fe', fontFamily: mono }}>
-                  {effectiveUse}%
+                  {effectiveUse == null ? 'n/a' : `${effectiveUse}%`}
                 </span>
                 <span style={{ fontSize: '0.85rem', color: C.faint }}>efficiency</span>
               </div>
               <div style={{ fontSize: '0.82rem', color: '#f8fafc', marginBottom: '8px' }}>
-                Compliant token ratio + policy adherence index
+                Share of tokens spent on clean requests (n/a until token data exists)
               </div>
               {/* Effective bar */}
               <div style={{ width: '100%', height: '6px', borderRadius: '3px', background: 'rgba(255,255,255,0.08)', overflow: 'hidden' }}>
-                <div style={{ width: `${Math.min(100, Math.max(0, effectiveUse))}%`, height: '100%', background: 'linear-gradient(90deg, #38bdf8, #00f2fe)' }} />
+                <div style={{ width: `${Math.min(100, Math.max(0, effectiveUse ?? 0))}%`, height: '100%', background: 'linear-gradient(90deg, #38bdf8, #00f2fe)' }} />
               </div>
               <div style={{ fontSize: '0.74rem', color: C.faint, marginTop: '8px' }}>
                 Evaluates prompt utility vs breach remediation waste
@@ -1508,7 +1788,7 @@ export function TrustAnalyticsView({ authedFetch, me, isAdmin, initialUuid }) {
                       {trustTier}
                     </div>
                     <div style={{ fontSize: '0.78rem', color: C.muted, marginTop: '2px', lineHeight: 1.5 }}>
-                      Composite score calculated from request volume ({totalRequests}), breach penalties, and token purity.
+                      Rating from {totalRequests} request(s): violations (redact, block, deny), weakest-agent authority per session, and token purity.
                     </div>
                   </div>
                 </div>

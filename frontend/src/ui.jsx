@@ -98,12 +98,14 @@ export function Kpi({ label, value, hint }) {
 }
 
 export function DecisionChip({ decision }) {
+  const dLower = (decision || '').toLowerCase();
   const cfg = {
     allow: { bg: 'rgba(16, 185, 129, 0.12)', border: 'rgba(16, 185, 129, 0.4)', text: '#34d399', glow: 'rgba(16, 185, 129, 0.3)' },
     redact: { bg: 'rgba(245, 158, 11, 0.12)', border: 'rgba(245, 158, 11, 0.4)', text: '#fbbf24', glow: 'rgba(245, 158, 11, 0.3)' },
+    hash: { bg: 'rgba(168, 85, 247, 0.12)', border: 'rgba(168, 85, 247, 0.4)', text: '#c084fc', glow: 'rgba(168, 85, 247, 0.3)' },
     block: { bg: 'rgba(244, 63, 94, 0.14)', border: 'rgba(244, 63, 94, 0.45)', text: '#fb7185', glow: 'rgba(244, 63, 94, 0.35)' },
     deny: { bg: 'rgba(244, 63, 94, 0.14)', border: 'rgba(244, 63, 94, 0.45)', text: '#fb7185', glow: 'rgba(244, 63, 94, 0.35)' },
-  }[decision] || { bg: 'rgba(148, 163, 184, 0.1)', border: 'rgba(148, 163, 184, 0.3)', text: '#94a3b8', glow: 'transparent' };
+  }[dLower] || { bg: 'rgba(148, 163, 184, 0.1)', border: 'rgba(148, 163, 184, 0.3)', text: '#94a3b8', glow: 'transparent' };
 
   return (
     <span style={{
@@ -245,6 +247,9 @@ function Preview({ text }) {
 
 export function RequestTable({ rows, onOpen, onOpenSession, showUser = false, empty = 'No requests yet.' }) {
   if (!rows || rows.length === 0) return <Empty>{empty}</Empty>;
+  const KIND_LABEL = { prompt: 'Prompt', completion: 'Agent response', tool_call: 'Tool call', tool_result: 'Tool result', final_output: 'Session summary' };
+  const KIND_COLOR = { prompt: '#38bdf8', completion: '#a78bfa', tool_call: '#f59e0b', tool_result: '#34d399', final_output: '#94a3b8' };
+  const hasKinds = rows.some(r => r.kind && r.kind !== 'prompt');
   return (
     <table style={{ width: '100%', borderCollapse: 'collapse' }}>
       <thead>
@@ -254,9 +259,10 @@ export function RequestTable({ rows, onOpen, onOpenSession, showUser = false, em
           {onOpenSession && <th style={th}>Session</th>}
           <th style={th}>Decision</th>
           <th style={th}>Categories</th>
-          <th style={th}>Prompt</th>
+          <th style={th}>Content</th>
           <th style={{ ...th, textAlign: 'right' }}>Tokens (In / Out)</th>
           <th style={{ ...th, textAlign: 'right' }}>Latency</th>
+          {hasKinds && <th style={th}>Type</th>}
         </tr>
       </thead>
       <tbody>
@@ -292,7 +298,7 @@ export function RequestTable({ rows, onOpen, onOpenSession, showUser = false, em
                   </button>
                 </td>
               )}
-              <td style={td}><DecisionChip decision={r.decision} /></td>
+              <td style={td}><DecisionChip decision={r.decision || (r.action_mode === 'HASH' && r.decision !== 'allow' ? 'hash' : r.decision)} /></td>
               <td style={{ ...td, color: '#e2e8f0', fontWeight: 500 }}>{(r.categories_found || []).join(', ') || '—'}</td>
               <td style={td}><Preview text={r.original_prompt || r.original_text} /></td>
               <td style={{ ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
@@ -308,6 +314,14 @@ export function RequestTable({ rows, onOpen, onOpenSession, showUser = false, em
                 ) : '—'}
               </td>
               <td style={{ ...td, textAlign: 'right', color: '#38bdf8', fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>{r.latency_ms != null ? `${Math.round(r.latency_ms)} ms` : '—'}</td>
+              {hasKinds && (
+                <td style={td}>
+                  <span style={{ color: KIND_COLOR[r.kind] || C.muted, fontSize: '0.78rem', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                    {r.label || KIND_LABEL[r.kind] || r.kind || '—'}
+                    {!r.label && r.tool_name ? ` · ${r.tool_name}` : ''}
+                  </span>
+                </td>
+              )}
             </tr>
           );
         })}
@@ -372,8 +386,11 @@ export function RequestDetail({ eventId, authedFetch, onBack }) {
         </button>
       )}
       <div style={{ display: 'flex', gap: '14px', alignItems: 'center', flexWrap: 'wrap', marginBottom: '14px' }}>
-        <DecisionChip decision={e.decision} />
+        <DecisionChip decision={e.decision || (e.action_mode === 'HASH' && e.decision !== 'allow' ? 'hash' : e.decision)} />
         <span style={{ color: C.muted, fontSize: '0.88rem' }}>{e.created_at ? new Date(e.created_at).toLocaleString() : ''}</span>
+        {e.label && <span style={{ fontSize: '0.8rem', fontWeight: 600, padding: '3px 10px', borderRadius: '6px', border: `1px solid ${C.border}`, color: '#e2e8f0' }}>{e.label}</span>}
+        {e.agent_name && <span style={{ fontSize: '0.8rem', fontFamily: mono, padding: '3px 10px', borderRadius: '6px', border: `1px solid ${C.border}`, color: C.accent }}>agent: {e.agent_name}</span>}
+        {e.tool_name && <span style={{ fontSize: '0.8rem', fontFamily: mono, padding: '3px 10px', borderRadius: '6px', border: `1px solid ${C.border}`, color: '#f59e0b' }}>tool: {e.tool_name}</span>}
       </div>
       {e.reason && (
         <div style={{

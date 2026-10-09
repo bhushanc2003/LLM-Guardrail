@@ -12,6 +12,32 @@ GENESIS_HASH = "0" * 64
 DEFAULT_SESSION = "default"
 
 
+def _sha(text: Optional[str]) -> str:
+    return hashlib.sha256((text or "").encode()).hexdigest()
+
+
+def receipt_payload(version: int, event_id: str, session_id: str, seq: int, kind: str, decision: Optional[str],
+                    action_mode: str, pii_count: int, prev_hash: str,
+                    agent_id: Optional[str] = None, original_text: Optional[str] = None,
+                    anonymized_text: Optional[str] = None) -> str:
+    """
+    The exact string a receipt hash covers. v1 (older rows) covered the decision metadata only.
+    v2 also covers the agent and a hash of the stored original / processed text, so editing the
+    recorded prompt or re-attributing the event to another agent breaks the chain too.
+    """
+    body = {
+        "event_id": event_id, "session_id": session_id, "seq": seq, "kind": kind, "decision": decision,
+        "action_mode": action_mode, "pii_count": pii_count, "prev_hash": prev_hash,
+    }
+    if version >= 2:
+        body.update({"v": 2, "agent_id": agent_id, "original_sha": _sha(original_text), "processed_sha": _sha(anonymized_text)})
+    return json.dumps(body, sort_keys=True, separators=(",", ":"))
+
+
+def receipt_hash(prev_hash: str, payload: str) -> str:
+    return hashlib.sha256((prev_hash + payload).encode()).hexdigest()
+
+
 def _decision_for(action_mode: str, pii_count: int) -> str:
     if pii_count == 0 or action_mode == "LOG_ONLY":
         return "allow"
@@ -50,6 +76,9 @@ class AuditLogger:
         anonymized_prompt: str = "",
         vault: Any = None,
         identity: Optional[Identity] = None,
+        kind: str = "prompt",
+        tool_name: Optional[str] = None,
+        decision: Optional[str] = None,
     ) -> Optional[str]:
         event_id = None
         session_ext = identity.session_external_id if identity else DEFAULT_SESSION
@@ -77,17 +106,18 @@ class AuditLogger:
             agent = _get_or_create_agent(db, session, agent_name, parent_name)
 
             pii_count = len(matches)
-            decision = _decision_for(action_mode, pii_count)
+            final_decision = decision if decision is not None else _decision_for(action_mode, pii_count)
             event = DBEvent(
                 session_id=session.id,
                 agent_id=agent.id,
-                kind="prompt",
+                kind=kind,
                 model=model,
                 action_mode=action_mode,
-                decision=decision,
+                decision=final_decision,
                 pii_count=pii_count,
                 latency_ms=round(latency_ms, 2),
-                anonymized_text=anonymized_prompt if decision == "redact" else None,
+                tool_name=tool_name,
+                anonymized_text=anonymized_prompt if final_decision == "redact" else None,
                 original_text=original_prompt or None,
             )
             db.add(event)
@@ -113,26 +143,16 @@ class AuditLogger:
             )
             prev_hash = last.hash if last else GENESIS_HASH
             seq = last.seq + 1 if last else 1
-            payload = json.dumps(
-                {
-                    "event_id": event.id,
-                    "session_id": session.id,
-                    "seq": seq,
-                    "kind": event.kind,
-                    "decision": decision,
-                    "action_mode": action_mode,
-                    "pii_count": pii_count,
-                    "prev_hash": prev_hash,
-                },
-                sort_keys=True,
-                separators=(",", ":"),
+            payload = receipt_payload(
+                2, event.id, session.id, seq, event.kind, event.decision, event.action_mode, pii_count, prev_hash,
+                agent_id=event.agent_id, original_text=event.original_text, anonymized_text=event.anonymized_text,
             )
             db.add(DBReceipt(
                 session_id=session.id,
                 seq=seq,
                 event_id=event.id,
                 prev_hash=prev_hash,
-                hash=hashlib.sha256((prev_hash + payload).encode()).hexdigest(),
+                hash=receipt_hash(prev_hash, payload),
             ))
             db.commit()
             event_id = event.id
@@ -262,6 +282,92 @@ class AuditLogger:
                 "action_counts": action_counts,
                 "decision_counts": decision_counts,
             }
+        finally:
+            db.close()
+
+    def verify_session(self, session_id: str) -> Dict[str, Any]:
+        """
+        Walk a session's receipt chain and recompute every hash from the stored event.
+        Returns {ok, receipts, broken_at_seq, reason}. Detects edited decisions / text / agent,
+        deleted events, removed or reordered receipts.
+        """
+        db = SessionLocal()
+        try:
+            rows = (
+                db.query(DBReceipt, DBEvent)
+                .outerjoin(DBEvent, DBEvent.id == DBReceipt.event_id)
+                .filter(DBReceipt.session_id == session_id)
+                .order_by(DBReceipt.seq.asc())
+                .all()
+            )
+            prev = GENESIS_HASH
+            for i, (r, e) in enumerate(rows, start=1):
+                def broken(reason):
+                    return {"ok": False, "receipts": len(rows), "broken_at_seq": r.seq, "reason": reason}
+                if r.seq != i:
+                    return broken(f"receipt sequence gap: expected #{i}, found #{r.seq} (a receipt was removed)")
+                if r.prev_hash != prev:
+                    return broken("previous-hash link does not match the receipt before it")
+                if e is None:
+                    return broken("the event this receipt covers no longer exists")
+                # Egress inspection (model output) later rewrites the event's decision and adds to pii_count.
+                # The receipt was hashed before that, so undo it: remove the egress count and accept any
+                # decision egress could have turned it into. Text, agent, order and deletions stay tamper-evident.
+                egress = getattr(e, "egress_pii_count", 0) or 0
+                pii = (e.pii_count or 0) - egress
+                decisions = [e.decision] if not egress else [e.decision, "allow", "redact", "block"]
+                candidates = []
+                for dec in decisions:
+                    candidates += [
+                        receipt_payload(2, e.id, session_id, r.seq, e.kind, dec, e.action_mode, pii, r.prev_hash,
+                                        agent_id=e.agent_id, original_text=e.original_text, anonymized_text=e.anonymized_text),
+                        # older receipts: metadata only, and for proxy events the decision argument was left empty
+                        receipt_payload(1, e.id, session_id, r.seq, e.kind, dec, e.action_mode, pii, r.prev_hash),
+                    ]
+                candidates.append(receipt_payload(1, e.id, session_id, r.seq, e.kind, None, e.action_mode, pii, r.prev_hash))
+                if not any(receipt_hash(r.prev_hash, c) == r.hash for c in candidates):
+                    return broken("stored event no longer matches what was hashed (decision, text or agent was changed)")
+                prev = r.hash
+            return {"ok": True, "receipts": len(rows), "broken_at_seq": None, "reason": "chain intact"}
+        finally:
+            db.close()
+
+    def export_session_receipts(self, session_id: str) -> List[Dict[str, Any]]:
+        """Receipts for one session with the full attribution chain: user -> session -> agent -> parent agent."""
+        from sqlalchemy.orm import aliased
+        Parent = aliased(DBAgent)
+        db = SessionLocal()
+        try:
+            rows = (
+                db.query(DBReceipt, DBEvent, DBSession, DBUser, DBAgent, Parent)
+                .outerjoin(DBEvent, DBEvent.id == DBReceipt.event_id)
+                .join(DBSession, DBSession.id == DBReceipt.session_id)
+                .join(DBUser, DBUser.id == DBSession.user_id)
+                .outerjoin(DBAgent, DBAgent.id == DBEvent.agent_id)
+                .outerjoin(Parent, Parent.id == DBAgent.parent_agent_id)
+                .filter(DBReceipt.session_id == session_id)
+                .order_by(DBReceipt.seq.asc())
+                .all()
+            )
+            return [
+                {
+                    "seq": r.seq,
+                    "timestamp": r.created_at.isoformat() if r.created_at else None,
+                    "user_id": u.user_uuid,
+                    "session_id": sess.external_id or sess.id,
+                    "agent_id": a.agent_name if a else None,
+                    "parent_agent_id": p.agent_name if p else None,
+                    "kind": e.kind if e else None,
+                    "tool_name": e.tool_name if e else None,
+                    "decision": e.decision if e else None,
+                    "action_mode": e.action_mode if e else None,
+                    "pii_count": e.pii_count if e else None,
+                    "event_id": r.event_id,
+                    "previous_hash": r.prev_hash,
+                    "hash": r.hash,
+                }
+                for r, e, sess, u, a, p in rows
+            ]
         finally:
             db.close()
 
