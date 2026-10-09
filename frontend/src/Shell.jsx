@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
   C,
-  AdrishyaLogo,
+  GuardianLogo,
   IconShield,
   IconOverview,
   IconActivity,
@@ -152,7 +152,7 @@ export default function Shell({ items, active, onNav, title, subtitle, userButto
           minHeight: '40px',
           overflow: 'hidden',
         }}>
-          <AdrishyaLogo
+          <GuardianLogo
             collapsed={collapsed}
             onClick={toggle}
             style={{ cursor: 'pointer' }}

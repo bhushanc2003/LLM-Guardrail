@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { ClerkProvider, SignedIn, SignedOut, SignInButton, SignUpButton, UserButton, useAuth, useUser } from '@clerk/clerk-react';
 import Shell from './Shell.jsx';
-import { Loader3D, C, mono, IconShield, IconUser, AdrishyaLogo } from './ui.jsx';
+import { Loader3D, C, mono, IconShield, IconUser, GuardianLogo } from './ui.jsx';
 import { OverviewAdmin, OverviewUser, LogsView, SessionsView, UsersView, UserView, TestView, TrustAnalyticsView, AdminActivityUserList, Segmented } from './views.jsx';
 
 const CLERK_PUBLISHABLE_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY || "pk_test_ZHJpdmVuLWNsYW0tOTMwNi5jbGVyay5hY2NvdW50cy5kZXYk";
@@ -345,7 +345,7 @@ function LandingPage() {
         <div style={{ maxWidth: '1240px', margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
 
           {/* Standardized Enterprise Brand Logo with checkmark shield */}
-          <AdrishyaLogo size="large" />
+          <GuardianLogo size="large" />
 
           {/* Quick Metrics & Actions */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
@@ -977,7 +977,7 @@ function LandingPage() {
         {/* Footer */}
         <footer style={{ marginTop: '80px', paddingTop: '24px', borderTop: '1px solid rgba(255, 255, 255, 0.08)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px', color: '#64748b', fontSize: '0.84rem' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <AdrishyaLogo size="small" showSubtitle={false} />
+            <GuardianLogo size="small" showSubtitle={false} />
             <span>•</span>
             <span>Invisible Privacy Layer</span>
           </div>
