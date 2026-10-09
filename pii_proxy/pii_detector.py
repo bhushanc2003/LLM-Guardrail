@@ -267,6 +267,13 @@ class PIIDetector:
             Tamoxifen Ondansetron Metoprolol Lithium Quetiapine Lorazepam Biktarvy IGNORE Name Phone Number Address
         '''.split()}
 
+        self.GENERIC_NOUN_STOP = {
+            'patient', 'patients', 'doctor', 'doctors', 'nurse', 'nurse practitioner', 
+            'candidate', 'taxpayer', 'physician', 'attending physician', 'user', 'person',
+            'office', 'bank counter', 'counter', 'archives', 'oncology archives', 'ward',
+            'pediatric ward', 'wing 4b', 'intensive care unit', 'unit', 'portal', 'building'
+        }
+
     def detect(self, text: str, check_hipaa: bool = True, check_dpdp: bool = True, aggressive_names: bool = False, use_gliner: bool = False) -> List[PIIMatch]:
         """
         Detect PII entities in text based on active compliance frameworks (HIPAA / DPDP).
@@ -302,6 +309,7 @@ class PIIDetector:
         _add(self.regex_mac, "DEVICE_ID", 13, 0.98, "SHARED")
         _add(self.regex_uuid, "DEVICE_ID", 13, 0.98, "SHARED")
         _add(self.regex_phone, "PHONE", 4, 0.90, "SHARED")
+        _add(self.regex_individual_date, "INDIVIDUAL_DATE", 3, 0.94, "SHARED")
 
         # ----------------------------------------------------
         # 2. EVALUATE DETERMINISTIC HIPAA PATTERNS
@@ -316,6 +324,7 @@ class PIIDetector:
             _add(self.regex_vin, "VEHICLE_ID", 12, 0.95, "HIPAA")
             _add(self.regex_license_plate, "VEHICLE_ID", 12, 0.92, "HIPAA")
             _add(self.regex_zip, "GEO_DATA", 2, 0.95, "HIPAA")
+            _add(self.regex_medical_date, "INDIVIDUAL_DATE", 3, 0.94, "HIPAA")
 
         # ----------------------------------------------------
         # 3. EVALUATE DETERMINISTIC DPDP PATTERNS (India Act 2023)
@@ -345,19 +354,27 @@ class PIIDetector:
         if use_gliner and self.gliner_model:
             try:
                 gliner_labels = [
-                    "person", "patient", "doctor",
-                    "street address", "city", "location",
+                    "person name", "city", "street address", "hospital",
                     "admission date", "discharge date", "date of birth",
                     "salary", "student roll number"
                 ]
-                gliner_ents = self.gliner_model.predict_entities(text, gliner_labels, threshold=0.45)
+                gliner_ents = self.gliner_model.predict_entities(text, gliner_labels, threshold=0.52)
                 for ent in gliner_ents:
                     lbl = ent["label"]
                     start, end = ent["start"], ent["end"]
                     ent_text = ent["text"]
                     score = float(ent["score"])
 
-                    if lbl in ["person", "patient", "doctor"]:
+                    # Suppression of generic nouns and stop words
+                    clean_norm = ent_text.strip().lower()
+                    if clean_norm in self.NAME_STOP or clean_norm in self.GENERIC_NOUN_STOP:
+                        continue
+
+                    if lbl == "person name":
+                        # Reject if all tokens are stop words
+                        tokens = clean_norm.split()
+                        if all(t in self.NAME_STOP or t in self.GENERIC_NOUN_STOP for t in tokens):
+                            continue
                         matches.append(PIIMatch(
                             entity_type="NAME",
                             category_id=1,
@@ -368,7 +385,7 @@ class PIIDetector:
                             confidence=score,
                             framework="SHARED"
                         ))
-                    elif lbl in ["street address", "city", "location"]:
+                    elif lbl in ["street address", "city", "hospital"]:
                         matches.append(PIIMatch(
                             entity_type="GEO_DATA",
                             category_id=2,
@@ -421,9 +438,6 @@ class PIIDetector:
             # Fallback to context-anchored heuristic regex and dictionary scrubbing
             _add(self.regex_address, "GEO_DATA", 2, 0.92, "SHARED")
             _add(self.regex_city_county, "GEO_DATA", 2, 0.88, "SHARED")
-            _add(self.regex_individual_date, "INDIVIDUAL_DATE", 3, 0.94, "SHARED")
-            if check_hipaa:
-                _add(self.regex_medical_date, "INDIVIDUAL_DATE", 3, 0.94, "HIPAA")
             if check_dpdp:
                 _add(self.regex_salary, "SALARY", 10, 0.92, "DPDP")
                 _add(self.regex_student_id, "STUDENT_ID", 11, 0.92, "DPDP")
