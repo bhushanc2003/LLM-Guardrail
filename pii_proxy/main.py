@@ -119,7 +119,7 @@ async def serve_static_asset(file_path: str):
     asset_file = os.path.join(dist_dir, "assets", file_path)
     if os.path.isfile(asset_file):
         from fastapi.responses import FileResponse
-        return FileResponse(asset_file)
+        return FileResponse(asset_file, headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
     raise HTTPException(status_code=404, detail="Asset not found")
 
 @app.api_route("/", methods=["GET", "HEAD"], response_class=HTMLResponse)
@@ -138,7 +138,7 @@ async def render_dashboard(request: Request):
     index_file = os.path.join(current_dist, "index.html")
     if os.path.exists(index_file):
         with open(index_file, "r", encoding="utf-8") as f:
-            return HTMLResponse(content=f.read())
+            return HTMLResponse(content=f.read(), headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
     return templates.TemplateResponse(
         request=request,
         name="index.html",
