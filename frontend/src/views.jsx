@@ -556,10 +556,16 @@ export function UsersView({ authedFetch, onOpenUser }) {
   const [filter, setFilter] = useState('all');
   const [sort, setSort] = useState('violations');
   const [shown, setShown] = useState(10);
+  const [loading, setLoading] = useState(true);
 
   usePoll(async (isCancelled) => {
     const r = await authedFetch('/api/admin/users');
-    if (r.ok && !isCancelled()) setUsers(await r.json());
+    if (r.ok && !isCancelled()) {
+      setUsers(await r.json());
+      setLoading(false);
+    } else if (!isCancelled()) {
+      setLoading(false);
+    }
   }, [authedFetch], 15000);
 
   const q = query.trim().toLowerCase();
@@ -592,7 +598,11 @@ export function UsersView({ authedFetch, onOpenUser }) {
         </div>
       }
     >
-      {list.length === 0 ? <Empty>No users match.</Empty> : (
+      {loading ? (
+        <Loader text="Loading Users Details…" />
+      ) : list.length === 0 ? (
+        <Empty>No users match.</Empty>
+      ) : (
         <>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
@@ -644,6 +654,7 @@ export function UsersView({ authedFetch, onOpenUser }) {
 export function UserView({ authedFetch, user, onOpenEvent }) {
   const [stats, setStats] = useState(null);
   const [tokens, setTokens] = useState(null);
+  const [loading, setLoading] = useState(true);
 
   usePoll(async (isCancelled) => {
     const [s, t] = await Promise.all([
@@ -653,7 +664,12 @@ export function UserView({ authedFetch, user, onOpenEvent }) {
     if (isCancelled()) return;
     if (s.ok) setStats(await s.json());
     if (t.ok) setTokens(await t.json());
+    setLoading(false);
   }, [user.user_uuid, authedFetch]);
+
+  if (loading && !stats) {
+    return <Loader text="Loading user details from database…" />;
+  }
 
   const d = stats?.decision_counts || {};
   return (
@@ -685,6 +701,7 @@ export function OverviewUser({ authedFetch, me, onOpenEvent }) {
   const [stats, setStats] = useState(null);
   const [tokens, setTokens] = useState(null);
   const [violations, setViolations] = useState([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const syncMode = async () => {
@@ -713,6 +730,7 @@ export function OverviewUser({ authedFetch, me, onOpenEvent }) {
     if (s.ok) setStats(await s.json());
     if (t.ok) setTokens(await t.json());
     if (q.ok) setViolations((await q.json()).filter(r => r.decision !== 'allow').slice(0, 8));
+    setLoading(false);
   }, [uuid, authedFetch]);
 
   const saveMode = async (value) => {
@@ -725,6 +743,10 @@ export function OverviewUser({ authedFetch, me, onOpenEvent }) {
     setSaved(res.ok ? 'Saved' : `Could not save (HTTP ${res.status})`);
     setTimeout(() => setSaved(''), 2000);
   };
+
+  if (loading && !stats) {
+    return <Loader text="Loading overview metrics…" />;
+  }
 
   const d = stats?.decision_counts || {};
   const modes = [
@@ -806,6 +828,7 @@ export function OverviewAdmin({ authedFetch, onOpenEvent, onOpenUser }) {
   const [users, setUsers] = useState([]);
   const [attention, setAttention] = useState([]);
   const [sessionCount, setSessionCount] = useState(0);
+  const [loading, setLoading] = useState(true);
 
   usePoll(async (isCancelled) => {
     const [s, u, a, ss] = await Promise.all([
@@ -819,7 +842,12 @@ export function OverviewAdmin({ authedFetch, onOpenEvent, onOpenUser }) {
     if (u.ok) setUsers(await u.json());
     if (a.ok) setAttention(await a.json());
     if (ss.ok) setSessionCount((await ss.json()).length);
+    setLoading(false);
   }, [authedFetch]);
+
+  if (loading && !stats) {
+    return <Loader text="Loading Overview…" />;
+  }
 
   const d = stats?.decision_counts || {};
   const avgTokensPerSession = sessionCount ? Math.round((stats?.total_tokens || 0) / sessionCount) : 0;

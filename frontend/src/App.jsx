@@ -104,6 +104,7 @@ function Dashboard() {
   const { getToken } = useAuth();
   const [me, setMe] = useState(undefined);
   const [nav, setNav] = useState(() => parseUrl(window.location.pathname, window.location.search));
+  const [pageReady, setPageReady] = useState(false);
 
   const authedFetch = useCallback(async (url, options = {}) => {
     const token = await getToken();
@@ -120,6 +121,7 @@ function Dashboard() {
 
   useEffect(() => {
     if (!user) return;
+    setPageReady(false);
     const load = async () => {
       try {
         await authedFetch('/api/users/sync', {
@@ -132,9 +134,12 @@ function Dashboard() {
           }),
         });
         const res = await authedFetch('/api/me');
-        setMe(res.ok ? await res.json() : null);
+        const nextMe = res.ok ? await res.json() : null;
+        setMe(nextMe);
       } catch (e) {
         setMe(null);
+      } finally {
+        setPageReady(true);
       }
     };
     load();
@@ -148,7 +153,7 @@ function Dashboard() {
     setNav({ page, params });
   };
 
-  if (me === undefined) {
+  if (me === undefined || !pageReady) {
     return <Loader3D />;
   }
   if (me === null) {
@@ -309,7 +314,48 @@ function Dashboard() {
       onNav={key => go(key)}
       title={titles[nav.page] || titles.overview}
       subtitle={subtitles[nav.page] || subtitles.overview}
-      userButton={<UserButton showName />}
+      userButton={
+        <UserButton
+          showName
+          appearance={{
+            variables: {
+              colorText: '#ffffff',
+              colorTextSecondary: '#ffffff',
+              colorBackground: '#0b1020',
+              colorPrimary: '#38bdf8',
+              colorBorder: 'rgba(255,255,255,0.15)',
+            },
+            elements: {
+              userButtonPopoverCard: {
+                backgroundColor: '#0b1020',
+                borderColor: 'rgba(255,255,255,0.12)',
+              },
+              userButtonPopoverActionButton: {
+                color: '#ffffff',
+                backgroundColor: '#0b1020',
+              },
+              userButtonPopoverActionButtonText: {
+                color: '#ffffff',
+              },
+              userButtonPopoverActionButtonIcon: {
+                color: '#ffffff',
+              },
+              userButtonPopoverFooter: {
+                color: '#ffffff',
+              },
+              userButtonPopoverRow: {
+                color: '#ffffff',
+              },
+              userButtonPopoverName: {
+                color: '#ffffff',
+              },
+              userButtonPopoverEmailAddress: {
+                color: '#ffffff',
+              },
+            },
+          }}
+        />
+      }
     >
       {header}
       {content}
