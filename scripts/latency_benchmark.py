@@ -14,6 +14,7 @@ Three measurements, all printed and saved to reports/latency_<timestamp>.md:
 Usage (server on :8000 running; venv active):
     python scripts/latency_benchmark.py
     python scripts/latency_benchmark.py --n 200 --upstream
+    python scripts/latency_benchmark.py --base https://<your-vercel-app>   # or set BENCH_BASE in .env
 The hook run writes events for the user 'latency-bench' (visible in the dashboard); delete that user afterwards if you like.
 """
 import argparse
@@ -26,6 +27,11 @@ import uuid
 import httpx
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+try:  # pick up BENCH_BASE, UPSTREAM_BASE_URL etc. from the repo's .env without having to `source` it
+    from dotenv import load_dotenv
+    load_dotenv(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env"))
+except Exception:
+    pass
 
 PII_TEXT = ("Name: Margaret Ellen Whitfield | MRN: MRN-000481923 | Diagnosis: Stage II invasive ductal carcinoma | "
             "Phone: (614) 555-0192 | Email: margaret.whitfield@example.com. Patients can book appointments through "

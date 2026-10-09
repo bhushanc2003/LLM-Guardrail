@@ -7,7 +7,10 @@ A local database answers in about a millisecond, so use it for the demo and late
 What it does, in order (each step is skipped if already done):
   1. connect to the local Postgres server as an admin
   2. create the app role and the database if they do not exist
-  3. create all tables (same models the app uses: pii_proxy/db.py)
+  3. create all tables (same models the app uses: pii_proxy/db.py) and make sure every column added after
+     the first release exists: users.hipaa_enabled / dpdp_enabled (per-user compliance toggles),
+     users.rating_reset_at, events.original_response / anonymized_response / egress_pii_count (model-output
+     checks), pii_findings.direction
   4. seed the 15 compliance categories and the HIPAA / DPDP packs
   5. print the DATABASE_URL to use, and optionally write it into .env
 
@@ -118,6 +121,23 @@ def main():
         sys.exit(f"App fell back to {appdb.engine.dialect.name}; could not reach {url}")
     appdb.init_db()
     print("tables ready: " + ", ".join(sorted(appdb.Base.metadata.tables)))
+
+    # confirm the later-added columns are really there (fresh databases get them from the models,
+    # older ones from init_db's ALTER TABLE ... IF NOT EXISTS step)
+    import sqlalchemy as sa
+    expected = {
+        "users": ["hipaa_enabled", "dpdp_enabled", "rating_reset_at", "action_mode"],
+        "events": ["original_response", "anonymized_response", "egress_pii_count"],
+        "pii_findings": ["direction"],
+    }
+    with appdb.engine.connect() as conn:
+        for table, cols in expected.items():
+            have = {r[0] for r in conn.execute(sa.text(
+                "SELECT column_name FROM information_schema.columns WHERE table_name = :t"), {"t": table})}
+            missing = [c for c in cols if c not in have]
+            print(f"  {table}: " + (f"MISSING {missing}" if missing else "all expected columns present"))
+            if missing:
+                sys.exit(f"{table} is missing columns {missing}; check pii_proxy/db.py init_db()")
 
     # 4. seed categories and packs (idempotent)
     conn = psycopg2.connect(url)

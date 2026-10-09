@@ -192,10 +192,39 @@ class DBScoreLedger(Base):
 
 def init_db():
     """Create any missing tables. Existing v1 tables are left as they are."""
+    Base.metadata.create_all(bind=engine)
+    # create_all never alters existing tables, so add columns introduced after the first deploy.
+    # IMPORTANT: ALTER TABLE takes an exclusive lock even when it would do nothing. On a busy shared database
+    # (many serverless cold starts) that queues every other query behind it and can freeze the whole app.
+    # So: look first, only ALTER when a column is really missing, and give up fast (lock_timeout) instead of waiting.
+    added_columns = (
+        ("users", "rating_reset_at", "timestamptz"),
+        ("users", "hipaa_enabled", "boolean"),
+        ("users", "dpdp_enabled", "boolean"),
+        ("events", "original_response", "text"),
+        ("events", "anonymized_response", "text"),
+        ("events", "egress_pii_count", "integer DEFAULT 0"),
+        ("pii_findings", "direction", "text DEFAULT 'ingress'"),
+    )
+    if engine.dialect.name != "postgresql":
+        return
     try:
-        Base.metadata.create_all(bind=engine)
+        with engine.connect() as conn:
+            present = {(t, c) for t, c in conn.execute(sa.text(
+                "SELECT table_name, column_name FROM information_schema.columns WHERE table_schema = current_schema()"))}
     except Exception as e:
-        print(f"Warning in create_all: {e}")
+        print(f"column check skipped: {e}")
+        return
+    for table, col, typ in added_columns:
+        if (table, col) in present:
+            continue
+        try:
+            with engine.begin() as conn:
+                conn.execute(sa.text("SET LOCAL lock_timeout = '3s'"))
+                conn.execute(sa.text(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col} {typ}"))
+            print(f"added column {table}.{col}")
+        except Exception as e:
+            print(f"could not add {table}.{col} now (will retry on next start): {str(e).splitlines()[0][:100]}")
 
 
 def get_db_session():

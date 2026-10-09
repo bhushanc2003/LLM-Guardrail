@@ -35,3 +35,6 @@ Thumbs.db
 frontend/node_modules 
 reports/
 scratch/
+DOCS/
+DOCS/METRICS_AND_SCORING_FORMULAS.md
+DOCS/PROPOSED_SCORING_FORMULAS.md

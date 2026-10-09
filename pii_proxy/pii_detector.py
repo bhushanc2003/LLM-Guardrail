@@ -258,6 +258,7 @@ class PIIDetector:
         self.regex_upi_generic = re.compile(r'\b[A-Za-z0-9._-]{2,}@[A-Za-z]{2,}\b(?!\.)')
         self.regex_passport_bare = re.compile(r'\bpassport\s+[A-Z][0-9]{7}\b|\b[A-Z][0-9]{7}\b', re.IGNORECASE)
         self.regex_bank_digits = re.compile(r'(?:Account|A/C|Acct)[^\d\n]{0,20}\d{9,18}\b|\b\d{12}\b', re.IGNORECASE)
+        self.regex_indian_mobile_spaced = re.compile(r'(?:\+91[\s-]?)?\b[6-9]\d{4}[\s-]\d{5}\b')
         self.regex_emp_bare = re.compile(r'\bEMP-?\d{3,8}\b', re.IGNORECASE)
 
         # Bare capitalised name runs, e.g. "Jane Smith" inside raw record text (no "Patient"/"Dr." cue).
@@ -368,6 +369,7 @@ class PIIDetector:
             _add(self.regex_passport_bare, "PASSPORT", 11, 0.93, "DPDP")
             _add(self.regex_bank_digits, "ACCOUNT_NUMBER", 10, 0.96, "DPDP")
             _add(self.regex_emp_bare, "EMPLOYEE_ID", 11, 0.94, "DPDP")
+            _add(self.regex_indian_mobile_spaced, "INDIAN_MOBILE", 4, 0.95, "DPDP")
 
         # Bare-name heuristic (opt-in, used by the hooks): runs of 2-4 capitalised words, minus a stop list
         if aggressive_names:
@@ -415,6 +417,12 @@ class PIIDetector:
                         ))
             except Exception:
                 pass
+
+        # Text we already masked ([REDACTED_PAN], [HASH:ab12cd34], [REMOVED: ...]) must not be detected again: a second pass
+        # (a masked tool result becomes part of the next prompt) would otherwise label the placeholder word as a name.
+        spans = [m.span() for m in re.finditer(r"\[(?:REDACTED_[A-Z_]+|HASH:[0-9a-f]{8}|REMOVED:[^\]]*)\]", text)]
+        if spans:
+            matches = [m for m in matches if not any(m.start < e and m.end > s for s, e in spans)]
 
         # Deduplicate and remove overlapping ranges (keep highest confidence / longest match)
         sorted_matches = sorted(matches, key=lambda x: (x.start, -(x.end - x.start), -x.confidence))

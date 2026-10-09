@@ -15,6 +15,7 @@ Design: the bench gives every hook a 2 s timeout and silently fails open, but ou
 """
 import hashlib
 import json
+import os
 import queue
 import re
 import threading
@@ -53,6 +54,33 @@ _USER_MODES: Dict[str, str] = {}
 _USER_FRAMEWORKS: Dict[str, tuple] = {}   # user_uuid -> (hipaa_enabled, dpdp_enabled); dashboard toggles, default both on
 
 
+SERVERLESS = bool(os.getenv("VERCEL"))   # no background threads there: the instance freezes after each response
+_LAST_REFRESH = 0.0
+
+
+def _refresh_user_modes_once() -> None:
+    global _LAST_REFRESH
+    _LAST_REFRESH = time.time()
+    try:
+        db = SessionLocal()
+        try:
+            rows = db.query(DBUser.user_uuid, DBUser.action_mode, DBUser.hipaa_enabled, DBUser.dpdp_enabled).all()
+            _USER_MODES.clear()
+            _USER_MODES.update({u: (m or "").upper() for u, m, _, _ in rows if m})
+            _USER_FRAMEWORKS.clear()
+            _USER_FRAMEWORKS.update({u: (h is not False, d is not False) for u, _, h, d in rows if h is False or d is False})
+        finally:
+            db.close()
+    except Exception as e:
+        print(f"[hooks] mode refresh failed: {e}")
+
+
+def _maybe_refresh() -> None:
+    """Serverless only: refresh the per-user settings cache lazily, at most every 20 s."""
+    if SERVERLESS and time.time() - _LAST_REFRESH > 20:
+        _refresh_user_modes_once()
+
+
 def _refresh_user_modes() -> None:
     while True:
         try:
@@ -72,6 +100,7 @@ def _refresh_user_modes() -> None:
 
 def _frameworks_for(user_id: str) -> tuple:
     """(check_hipaa, check_dpdp) from the user's dashboard toggles; both on unless switched off."""
+    _maybe_refresh()
     return _USER_FRAMEWORKS.get(user_id, (True, True))
 
 
@@ -211,7 +240,7 @@ def _persist(job: Dict[str, Any]) -> None:
     if job.get("penalties") or job.get("reward"):
         db = SessionLocal()
         try:
-            _, _, agent = _resolve(db, job["user_id"], job["session_id"], job["agent_id"], job["parent_agent_id"])
+            _, session_row, agent = _resolve(db, job["user_id"], job["session_id"], job["agent_id"], job["parent_agent_id"])
             for kind, reason in job.get("penalties", []):
                 penalize_agent(db, agent.id, kind, reason, event_id=event_id)
             if job.get("reward"):
@@ -220,6 +249,8 @@ def _persist(job: Dict[str, Any]) -> None:
                     output_compliant=True, event_id=event_id,
                 )
             db.commit()
+            if event_id:   # authority decision -> its own receipt in the same hash chain
+                audit_logger.log_authority_receipt(session_row.id, event_id, agent.id)
         finally:
             db.close()
 
@@ -238,11 +269,13 @@ def _worker(q: "queue.Queue[Dict[str, Any]]") -> None:
 # Sharded by session so each session's writes stay in order (the receipt hash chain is per session)
 # while different sessions are written in parallel.
 _SHARDS: List["queue.Queue[Dict[str, Any]]"] = [queue.Queue() for _ in range(8)]
-for _i, _q in enumerate(_SHARDS):
-    threading.Thread(target=_worker, args=(_q,), daemon=True, name=f"hooks-persist-{_i}").start()
+if not SERVERLESS:
+    for _i, _q in enumerate(_SHARDS):
+        threading.Thread(target=_worker, args=(_q,), daemon=True, name=f"hooks-persist-{_i}").start()
 
 
-threading.Thread(target=_refresh_user_modes, daemon=True, name="hooks-modes").start()
+if not SERVERLESS:
+    threading.Thread(target=_refresh_user_modes, daemon=True, name="hooks-modes").start()
 
 
 def _pending() -> int:
@@ -252,11 +285,18 @@ def _pending() -> int:
 def _enqueue(body, endpoint: str, kind: str, decision: str, original: str, **extra) -> None:
     if kind == "completion" and not (original or "").strip():
         original = "(no text: the model replied with a tool call)"
-    _SHARDS[hash(body.session_id) % len(_SHARDS)].put({
+    job = {
         "user_id": body.user_id, "session_id": body.session_id, "agent_id": body.agent_id,
         "parent_agent_id": body.parent_agent_id, "endpoint": endpoint, "kind": kind,
         "decision": decision, "original": original, "matches": extra.pop("matches", []), **extra,
-    })
+    }
+    if SERVERLESS:   # the instance may freeze right after responding, so write before returning
+        try:
+            _persist(job)
+        except Exception as e:
+            print(f"[hooks] persist failed ({endpoint}): {e}")
+    else:
+        _SHARDS[hash(body.session_id) % len(_SHARDS)].put(job)
 
 
 # --------------------------------------------------------------------------- #
@@ -378,6 +418,13 @@ def on_completion_received(body: CompletionIn):
             ok, verdict = evaluate_verdict({a.name: a.score for a in st.agents.values()})
             if not ok:
                 clean, decision = verdict, "block"
+        else:
+            # Handoff gate: a sub-agent whose own score has collapsed does not get its reply passed on to the delegating agent
+            floor = DEFAULT_POLICY["scoring"]["session_block_threshold"]
+            if ag.score < floor:
+                clean = (f"output blocked: agent '{ag.name}' trust score degraded to {ag.score} < {floor}; "
+                         f"its reply was not passed on")
+                decision = "block"
     _enqueue(body, "/api/v1/on_completion_received", "completion", decision, body.completion,
              matches=matches, clean=clean, vault=vault, penalties=penalties, mode=mode,
              latency_ms=float(body.latency_ms), usage=(body.prompt_tokens, body.completion_tokens))

@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Optional
 from sqlalchemy import func
 
 from pii_proxy.context import Identity
-from pii_proxy.db import SessionLocal, DBUser, DBSession, DBAgent, DBEvent, DBPIIFinding, DBReceipt, DBCategory
+from pii_proxy.db import SessionLocal, DBUser, DBSession, DBAgent, DBEvent, DBPIIFinding, DBReceipt, DBCategory, DBScoreLedger
 
 GENESIS_HASH = "0" * 64
 DEFAULT_SESSION = "default"
@@ -32,6 +32,19 @@ def receipt_payload(version: int, event_id: str, session_id: str, seq: int, kind
     if version >= 2:
         body.update({"v": 2, "agent_id": agent_id, "original_sha": _sha(original_text), "processed_sha": _sha(anonymized_text)})
     return json.dumps(body, sort_keys=True, separators=(",", ":"))
+
+
+def authority_payload(event_id: str, session_id: str, seq: int, agent_id: str, rows, prev_hash: str) -> str:
+    """
+    Payload of an *authority receipt*: the score change(s) one decision caused for one agent.
+    `rows` are the score_ledger entries (delta, reason) tied to that event; editing, adding or removing
+    a ledger row breaks the receipt.
+    """
+    rows = sorted((int(d), str(r)) for d, r in rows)
+    return json.dumps({
+        "kind": "authority", "event_id": event_id, "session_id": session_id, "seq": seq, "agent_id": agent_id,
+        "delta": sum(d for d, _ in rows), "ledger_sha": _sha("|".join(f"{d}:{r}" for d, r in rows)), "prev_hash": prev_hash,
+    }, sort_keys=True, separators=(",", ":"))
 
 
 def receipt_hash(prev_hash: str, payload: str) -> str:
@@ -285,6 +298,32 @@ class AuditLogger:
         finally:
             db.close()
 
+    def log_authority_receipt(self, session_id: str, event_id: str, agent_id: str) -> bool:
+        """Append a receipt for the score change(s) an event caused. No score change -> no receipt."""
+        db = SessionLocal()
+        try:
+            rows = (
+                db.query(DBScoreLedger.delta, DBScoreLedger.reason)
+                .filter(DBScoreLedger.event_id == event_id, DBScoreLedger.agent_id == agent_id)
+                .all()
+            )
+            if not rows:
+                return False
+            last = db.query(DBReceipt).filter(DBReceipt.session_id == session_id).order_by(DBReceipt.seq.desc()).first()
+            prev_hash = last.hash if last else GENESIS_HASH
+            seq = last.seq + 1 if last else 1
+            payload = authority_payload(event_id, session_id, seq, agent_id, rows, prev_hash)
+            db.add(DBReceipt(session_id=session_id, seq=seq, event_id=event_id, prev_hash=prev_hash,
+                             hash=receipt_hash(prev_hash, payload)))
+            db.commit()
+            return True
+        except Exception as e:
+            db.rollback()
+            print(f"Authority receipt write failed: {e}")
+            return False
+        finally:
+            db.close()
+
     def verify_session(self, session_id: str) -> Dict[str, Any]:
         """
         Walk a session's receipt chain and recompute every hash from the stored event.
@@ -301,6 +340,7 @@ class AuditLogger:
                 .all()
             )
             prev = GENESIS_HASH
+            seen_events = set()
             for i, (r, e) in enumerate(rows, start=1):
                 def broken(reason):
                     return {"ok": False, "receipts": len(rows), "broken_at_seq": r.seq, "reason": reason}
@@ -310,6 +350,18 @@ class AuditLogger:
                     return broken("previous-hash link does not match the receipt before it")
                 if e is None:
                     return broken("the event this receipt covers no longer exists")
+                if e.id in seen_events:
+                    # second receipt for the same event = its authority receipt (score change); recompute from the ledger
+                    ledger = (
+                        db.query(DBScoreLedger.delta, DBScoreLedger.reason)
+                        .filter(DBScoreLedger.event_id == e.id, DBScoreLedger.agent_id == e.agent_id).all()
+                    )
+                    cand = [authority_payload(e.id, session_id, r.seq, e.agent_id, ledger, r.prev_hash)]
+                    if not any(receipt_hash(r.prev_hash, c) == r.hash for c in cand):
+                        return broken("score ledger no longer matches the authority receipt (a score change was edited, added or removed)")
+                    prev = r.hash
+                    continue
+                seen_events.add(e.id)
                 # Egress inspection (model output) later rewrites the event's decision and adds to pii_count.
                 # The receipt was hashed before that, so undo it: remove the egress count and accept any
                 # decision egress could have turned it into. Text, agent, order and deletions stay tamper-evident.
@@ -349,9 +401,13 @@ class AuditLogger:
                 .order_by(DBReceipt.seq.asc())
                 .all()
             )
-            return [
-                {
+            out, seen = [], set()
+            for r, e, sess, u, a, p in rows:
+                is_auth = r.event_id in seen
+                seen.add(r.event_id)
+                item = {
                     "seq": r.seq,
+                    "type": "authority" if is_auth else "decision",
                     "timestamp": r.created_at.isoformat() if r.created_at else None,
                     "user_id": u.user_uuid,
                     "session_id": sess.external_id or sess.id,
@@ -366,8 +422,15 @@ class AuditLogger:
                     "previous_hash": r.prev_hash,
                     "hash": r.hash,
                 }
-                for r, e, sess, u, a, p in rows
-            ]
+                if is_auth and e is not None:
+                    led = (
+                        db.query(DBScoreLedger.delta, DBScoreLedger.reason)
+                        .filter(DBScoreLedger.event_id == e.id, DBScoreLedger.agent_id == e.agent_id).all()
+                    )
+                    item["score_delta"] = sum(d for d, _ in led)
+                    item["score_reasons"] = [r_ for _, r_ in led]
+                out.append(item)
+            return out
         finally:
             db.close()
 
