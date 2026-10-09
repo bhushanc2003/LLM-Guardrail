@@ -7,63 +7,62 @@
 
 ---
 
-## 1. End-to-End Architectural Flow Diagram
+## 1. Visual System Architecture Diagram
+
+![Zero-Trust Guardrail Architecture](architecture_diagram.svg)
+
+---
+
+## 2. End-to-End Architectural Flow (Mermaid)
 
 ```mermaid
-flowchart TD
-    subgraph Client["Client Applications & AI Gateways"]
-        Inbound["Inbound Prompt / LLM Request\n(REST API / Stream / OpenAI SDK)"]
+graph TD
+    Inbound["Inbound Client Prompt / API Request\n(REST API / Stream / OpenAI SDK)"] --> Auth["Auth & Compliance Config Router\n(JWT / DBUser Settings)"]
+    Auth --> Toggle{"Advanced Filtering\nEnabled in Overview?"}
+
+    Toggle -->|OFF - Fast-Path| Tier0["Tier 0: Deterministic Fast-Path\n(<0.5 ms Latency)"]
+    Toggle -->|ON - Neural Active| Tier1["Tier 1: Hybrid Neural SLM Pipeline\n(~50 ms Latency)"]
+
+    subgraph FastPath["Tier 0 Matchers (<0.5ms)"]
+        Tier0 --- R1["Aadhaar (Verhoeff Checksum)"]
+        Tier0 --- R2["Credit Cards (Luhn Algorithm)"]
+        Tier0 --- R3["PAN Card (ITD Syntax Regex)"]
+        Tier0 --- R4["UPI Handles, IFSC & Bank Acc"]
+        Tier0 --- R5["SSN, MRN, Health IDs & Dates"]
+        Tier0 --- R6["Linguistic Stop-Word Filters"]
     end
 
-    subgraph Router["Compliance & Routing Layer"]
-        Inbound --> Auth["JWT / User Identity & Config Loader"]
-        Auth --> CheckToggle{"Advanced Filtering\nEnabled?"}
+    subgraph NeuralSLM["Tier 1 GLiNER (152M SLM)"]
+        Tier1 --- N1["Bare Human Names (Rahul Sharma)"]
+        Tier1 --- N2["Unanchored Cities (Bangalore, Kolkata)"]
+        Tier1 --- N3["Unstructured Salary (INR 24 LPA)"]
+        Tier1 --- N4["Hospital Facilities (Seattle Grace)"]
     end
 
-    subgraph Engine["Dual-Engine Detection Pipeline"]
-        CheckToggle -- "OFF (Default / Fast-Path)" --> Tier0["Tier 0: Deterministic Fast-Path\n(<0.5 ms Latency)"]
-        CheckToggle -- "ON (Neural Active)" --> HybridPipeline["Hybrid Pipeline\n(~50 ms Latency)"]
+    R1 --> Dedupe["Span Deduplication & Conflict Resolution"]
+    R2 --> Dedupe
+    R3 --> Dedupe
+    R4 --> Dedupe
+    R5 --> Dedupe
+    R6 --> Dedupe
+    N1 --> Dedupe
+    N2 --> Dedupe
+    N3 --> Dedupe
+    N4 --> Dedupe
 
-        subgraph Tier0Details["Tier 0: Pure C-Regex & Checksums"]
-            Tier0 --> R1["Aadhaar (Verhoeff Checksum)"]
-            Tier0 --> R2["Credit Cards (Luhn Algorithm)"]
-            Tier0 --> R3["PAN Card (ITD Syntax Regex)"]
-            Tier0 --> R4["UPI Handles, IFSC & Bank Acc"]
-            Tier0 --> R5["SSN, MRN, Health IDs & Dates"]
-            Tier0 --> R6["Linguistic Stop-Word Filters"]
-        end
+    Dedupe --> ClinicalFilter["Preserve Clinical Diagnoses\n(0% False Positives on Drugs)"]
+    ClinicalFilter --> Action{"User Enforcement Mode"}
 
-        subgraph NeuralDetails["Tier 1: Neural Zero-Shot SLM"]
-            HybridPipeline --> Tier0
-            HybridPipeline --> GLiNER["GLiNER 152.6M Small-v2.1\n(DeBERTa-v3 Bidirectional Transformer)"]
-            GLiNER --> N1["Bare Human Names (Rahul Sharma, Sarah Connor)"]
-            GLiNER --> N2["Unanchored Cities & Localities (Bangalore, Kolkata)"]
-            GLiNER --> N3["Contextual Compensation (INR 24 LPA)"]
-            GLiNER --> N4["Hospital Facilities (Seattle Grace Hospital)"]
-        end
-    end
+    Action -->|REDACT| Mask["PIISessionVault\n[REDACTED_TYPE] / Cryptographic Token"]
+    Action -->|BLOCK| Reject["HTTP 400 Compliance Violation\n(Immediate Request Termination)"]
+    Action -->|HASH| HMac["Deterministic HMAC-SHA256\n[HASH:a1b2c3d4]"]
+    Action -->|LOG_ONLY| AuditOnly["Zero-Modification Pass-through"]
 
-    subgraph Deduplication["Aggregation & Conflict Resolution"]
-        R1 & R2 & R3 & R4 & R5 & R6 --> Dedupe["Span Merging & Deduplication Engine\n(Chronological Offset Sort & Priority Filter)"]
-        N1 & N2 & N3 & N4 --> Dedupe
-        Dedupe --> ClinicalFilter["Preserve Clinical Diagnoses & Medications\n(Protects Lupus, Metoprolol, Ductal Carcinoma)"]
-    end
-
-    subgraph Enforcement["Enforcement Engine & Session Vault"]
-        ClinicalFilter --> Action{"User Action Mode"}
-        Action -- "REDACT" --> Mask["PIISessionVault\n[REDACTED_TYPE] / Cryptographic Token"]
-        Action -- "BLOCK" --> Reject["HTTP 400 Compliance Violation\n(Immediate Request Termination)"]
-        Action -- "HASH" --> HMac["Deterministic HMAC-SHA256\n[HASH:a1b2c3d4]"]
-        Action -- "LOG_ONLY" --> AuditOnly["Zero-Modification Pass-through"]
-    end
-
-    subgraph Upstream["Upstream LLM Provider"]
-        Mask --> LLM["Target LLM (OpenAI, Anthropic, Gemini, On-Prem)"]
-        HMac --> LLM
-        AuditOnly --> LLM
-        LLM --> Egress["Egress Inspector & De-Anonymization"]
-        Egress --> ClientResponse["Sanitized Response to Client"]
-    end
+    Mask --> LLM["Target Upstream LLM\n(OpenAI, Anthropic, Gemini, On-Prem)"]
+    HMac --> LLM
+    AuditOnly --> LLM
+    LLM --> Egress["Egress Inspector & De-Anonymization"]
+    Egress --> ClientResponse["Sanitized Response to Client"]
 ```
 
 ---
