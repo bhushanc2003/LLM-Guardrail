@@ -244,6 +244,9 @@ export function SessionsView({ authedFetch, uuid = null, showUser = false, initi
   }
 
   if (selected) {
+    const promptTokens = events.reduce((acc, ev) => acc + (ev.prompt_tokens || 0), 0);
+    const completionTokens = events.reduce((acc, ev) => acc + (ev.completion_tokens || 0), 0);
+    const totalTokens = promptTokens + completionTokens;
     return (
       <Card
         title={
@@ -254,6 +257,12 @@ export function SessionsView({ authedFetch, uuid = null, showUser = false, initi
           </span>
         }
       >
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '12px', marginBottom: '18px' }}>
+          <Kpi label="Requests" value={events.length} />
+          <Kpi label="Input Tokens" value={promptTokens.toLocaleString()} hint="Prompt payload" />
+          <Kpi label="Output Tokens" value={completionTokens.toLocaleString()} hint="Completion text" />
+          <Kpi label="Total Tokens" value={totalTokens.toLocaleString()} />
+        </div>
         <ScrollBox maxHeight={600}>
           <RequestTable rows={events} onOpen={setEventId} empty="No requests in this session." />
         </ScrollBox>
@@ -293,6 +302,7 @@ export function SessionsView({ authedFetch, uuid = null, showUser = false, initi
                 {showUser && <th style={cellTh}>User</th>}
                 <th style={{ ...cellTh, textAlign: 'right' }}>Agents</th>
                 <th style={{ ...cellTh, textAlign: 'right' }}>Requests</th>
+                <th style={{ ...cellTh, textAlign: 'right' }}>Tokens (In / Out)</th>
                 <th style={{ ...cellTh, textAlign: 'right' }}>Violations</th>
                 <th style={cellTh}>Last seen</th>
               </tr>
@@ -310,6 +320,14 @@ export function SessionsView({ authedFetch, uuid = null, showUser = false, initi
                   {showUser && <td style={cellTd}>{s.user_email}</td>}
                   <td style={{ ...cellTd, textAlign: 'right' }}>{s.agents}</td>
                   <td style={{ ...cellTd, textAlign: 'right' }}>{s.requests}</td>
+                  <td style={{ ...cellTd, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
+                    <div style={{ color: '#00f2fe', fontWeight: 600 }}>
+                      {((s.total_tokens || ((s.prompt_tokens || 0) + (s.completion_tokens || 0)))).toLocaleString()}
+                    </div>
+                    <div style={{ fontSize: '0.72rem', color: C.faint, whiteSpace: 'nowrap' }}>
+                      ↓{(s.prompt_tokens || 0).toLocaleString()} in · ↑{(s.completion_tokens || 0).toLocaleString()} out
+                    </div>
+                  </td>
                   <td style={{ ...cellTd, textAlign: 'right', color: s.violations > 0 ? C.block : C.muted }}>{s.violations}</td>
                   <td style={{ ...cellTd, color: C.muted, whiteSpace: 'nowrap' }}>{s.last_seen_at ? new Date(s.last_seen_at).toLocaleString() : '—'}</td>
                 </tr>

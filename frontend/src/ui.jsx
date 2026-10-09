@@ -255,7 +255,7 @@ export function RequestTable({ rows, onOpen, onOpenSession, showUser = false, em
           <th style={th}>Decision</th>
           <th style={th}>Categories</th>
           <th style={th}>Prompt</th>
-          <th style={{ ...th, textAlign: 'right' }}>Tokens</th>
+          <th style={{ ...th, textAlign: 'right' }}>Tokens (In / Out)</th>
           <th style={{ ...th, textAlign: 'right' }}>Latency</th>
         </tr>
       </thead>
@@ -295,8 +295,17 @@ export function RequestTable({ rows, onOpen, onOpenSession, showUser = false, em
               <td style={td}><DecisionChip decision={r.decision} /></td>
               <td style={{ ...td, color: '#e2e8f0', fontWeight: 500 }}>{(r.categories_found || []).join(', ') || '—'}</td>
               <td style={td}><Preview text={r.original_prompt || r.original_text} /></td>
-              <td style={{ ...td, textAlign: 'right', color: C.muted, fontVariantNumeric: 'tabular-nums' }}>
-                {r.prompt_tokens != null || r.completion_tokens != null ? (r.prompt_tokens || 0) + (r.completion_tokens || 0) : '—'}
+              <td style={{ ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
+                {r.prompt_tokens != null || r.completion_tokens != null ? (
+                  <div>
+                    <div style={{ color: '#00f2fe', fontWeight: 600 }}>
+                      {((r.prompt_tokens || 0) + (r.completion_tokens || 0)).toLocaleString()}
+                    </div>
+                    <div style={{ fontSize: '0.72rem', color: C.faint, whiteSpace: 'nowrap' }}>
+                      ↓{(r.prompt_tokens || 0).toLocaleString()} in · ↑{(r.completion_tokens || 0).toLocaleString()} out
+                    </div>
+                  </div>
+                ) : '—'}
               </td>
               <td style={{ ...td, textAlign: 'right', color: '#38bdf8', fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>{r.latency_ms != null ? `${Math.round(r.latency_ms)} ms` : '—'}</td>
             </tr>
@@ -420,8 +429,9 @@ export function RequestDetail({ eventId, authedFetch, onBack }) {
             <span style={{ color: C.muted }}>Agent ID</span><span>{e.agent_name || 'default'}</span>
             <span style={{ color: C.muted }}>Target Model</span><span style={{ fontFamily: mono }}>{e.model || '—'}</span>
             <span style={{ color: C.muted }}>Action Mode</span><span style={{ fontWeight: 700, color: '#ffffff' }}>{e.action_mode || '—'}</span>
-            <span style={{ color: C.muted }}>Prompt Tokens</span><span>{e.prompt_tokens ?? '—'}</span>
-            <span style={{ color: C.muted }}>Completion Tokens</span><span>{e.completion_tokens ?? '—'}{e.tokens_estimated ? ' (estimated)' : ''}</span>
+            <span style={{ color: C.muted }}>Input Tokens (Prompt)</span><span style={{ fontFamily: mono, color: '#38bdf8' }}>{e.prompt_tokens != null ? e.prompt_tokens.toLocaleString() : '—'}</span>
+            <span style={{ color: C.muted }}>Output Tokens (Completion)</span><span style={{ fontFamily: mono, color: '#c084fc' }}>{e.completion_tokens != null ? e.completion_tokens.toLocaleString() : '—'}{e.tokens_estimated ? ' (estimated)' : ''}</span>
+            <span style={{ color: C.muted }}>Total Tokens</span><span style={{ fontFamily: mono, fontWeight: 700, color: '#00f2fe' }}>{(e.prompt_tokens != null || e.completion_tokens != null) ? ((e.prompt_tokens || 0) + (e.completion_tokens || 0)).toLocaleString() : '—'}</span>
             <span style={{ color: C.muted }}>Gateway Latency</span><span style={{ color: '#38bdf8', fontWeight: 600 }}>{e.latency_ms} ms</span>
           </div>
         </div>

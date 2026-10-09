@@ -135,6 +135,8 @@ def _sessions_summary(db, user_uuid: Optional[str] = None, limit: int = 50) -> L
             DBUser.email,
             func.count(DBEvent.id).label("requests"),
             func.count(DBEvent.id).filter(DBEvent.decision.in_(["redact", "block"])).label("violations"),
+            func.coalesce(func.sum(DBEvent.prompt_tokens), 0).label("prompt_tokens"),
+            func.coalesce(func.sum(DBEvent.completion_tokens), 0).label("completion_tokens"),
         )
         .join(DBUser, DBUser.id == DBSession.user_id)
         .outerjoin(DBEvent, DBEvent.session_id == DBSession.id)
@@ -162,6 +164,9 @@ def _sessions_summary(db, user_uuid: Optional[str] = None, limit: int = 50) -> L
             "requests": r.requests,
             "violations": r.violations,
             "agents": agent_counts.get(r.id, 0),
+            "prompt_tokens": int(r.prompt_tokens),
+            "completion_tokens": int(r.completion_tokens),
+            "total_tokens": int(r.prompt_tokens + r.completion_tokens),
         }
         for r in rows
     ]
@@ -993,7 +998,7 @@ async def chat_completions(request: Request, user_uuid: Optional[str] = "default
                 latest_user_msg = str(messages[idx].get("content", ""))
                 break
         blocked_matches = detector.detect(latest_user_msg) if latest_user_msg else []
-        audit_logger.log_event(
+        blocked_event_id = audit_logger.log_event(
             identity=identity_from_request(request, user_uuid, req_body.get("messages")),
             user_id=user_id,
             user_uuid=user_uuid,
@@ -1007,6 +1012,9 @@ async def chat_completions(request: Request, user_uuid: Optional[str] = "default
             anonymized_prompt="[BLOCKED_POLICY_VIOLATION]",
             vault=vault
         )
+        if blocked_event_id:
+            prompt_chars = sum(len(str(m.get("content", ""))) for m in messages or [] if isinstance(m, dict))
+            audit_logger.set_usage(blocked_event_id, max(1, prompt_chars // 4), 0, True)
         return JSONResponse(
             status_code=400,
             content={
