@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { ClerkProvider, SignedIn, SignedOut, SignInButton, SignUpButton, UserButton, useAuth, useUser } from '@clerk/clerk-react';
 import Shell from './Shell.jsx';
-import { Loader3D } from './ui.jsx';
-import { OverviewAdmin, OverviewUser, LogsView, SessionsView, UsersView, UserView, TestView, TrustAnalyticsView, Segmented } from './views.jsx';
+import { Loader3D, C, mono } from './ui.jsx';
+import { OverviewAdmin, OverviewUser, LogsView, SessionsView, UsersView, UserView, TestView, TrustAnalyticsView, AdminActivityUserList, Segmented } from './views.jsx';
 
 const CLERK_PUBLISHABLE_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY || "pk_test_ZHJpdmVuLWNsYW0tOTMwNi5jbGVyay5hY2NvdW50cy5kZXYk";
 
@@ -66,9 +66,11 @@ function parseUrl(path, searchStr) {
   const view = search.get('view') || 'requests';
   const event = search.get('event') || null;
   const session = search.get('session') ? { session_id: search.get('session'), external_id: search.get('session') } : null;
+  const user_uuid = search.get('user_uuid') || null;
+  const user_email = search.get('user_email') || null;
 
   if (path.startsWith('/activity')) {
-    return { page: 'activity', params: { view, scope, event, session } };
+    return { page: 'activity', params: { view, scope, event, session, user_uuid, user_email } };
   } else if (path.startsWith('/users')) {
     return { page: 'users', params: {} };
   } else if (path.startsWith('/trust')) {
@@ -85,6 +87,8 @@ function navToUrl(page, params = {}) {
   if (params.view && params.view !== 'requests') search.set('view', params.view);
   if (params.event) search.set('event', params.event);
   if (params.session?.session_id) search.set('session', params.session.session_id);
+  if (params.user_uuid) search.set('user_uuid', params.user_uuid);
+  if (params.user_email) search.set('user_email', params.user_email);
 
   const query = search.toString() ? `?${search.toString()}` : '';
   if (page === 'activity') return `/activity${query}`;
@@ -170,10 +174,13 @@ function Dashboard() {
   const scope = nav.params.scope || 'all';
   const view = nav.params.view || 'requests';
   const showMe = !isAdmin || scope === 'me';
+  const selectedUserEmail = nav.params.user_email || (nav.params.user_uuid === 'all' ? 'All Users (System-wide)' : null);
 
   const titles = {
     overview: 'Overview',
-    activity: view === 'sessions' ? (isAdmin && !showMe ? 'All sessions' : 'Sessions') : (isAdmin && !showMe ? 'All requests' : 'Requests'),
+    activity: isAdmin && !nav.params.user_uuid
+      ? 'Activity Logs · Users'
+      : (selectedUserEmail ? `${selectedUserEmail} · Activity` : (view === 'sessions' ? 'Sessions' : 'Requests')),
     trust: 'Trust & Token Analytics',
     users: 'Users',
     user: nav.params.user?.email || 'User',
@@ -181,15 +188,17 @@ function Dashboard() {
   };
   const subtitles = {
     overview: isAdmin && !showMe ? 'System-wide activity' : 'Your activity and how PII is handled',
-    activity: view === 'sessions' ? 'Tasks and conversations, then their requests' : 'Every request, with its decision and details',
+    activity: isAdmin && !nav.params.user_uuid
+      ? 'Select a user below to inspect their session history and request logs'
+      : (view === 'sessions' ? 'Tasks and conversations for this user' : 'Every request with decision, PII findings, and latency'),
     trust: 'Per-user token usage tracking across all requests, authority-trust, violation frequency, effective-use score',
     users: 'Search and open a user',
     user: 'Sessions, logs and categories for this user',
     test: 'Check a prompt without sending it to the model',
   };
 
-  const openEvent = id => go('activity', { view: 'requests', event: id });
-  const openSession = (id, name) => go('activity', { view: 'sessions', session: { session_id: id, external_id: name || id } });
+  const openEvent = id => go('activity', { view: 'requests', event: id, user_uuid: nav.params.user_uuid, user_email: nav.params.user_email });
+  const openSession = (id, name) => go('activity', { view: 'sessions', session: { session_id: id, external_id: name || id }, user_uuid: nav.params.user_uuid, user_email: nav.params.user_email });
 
   let header = null;
   let content;
@@ -201,11 +210,82 @@ function Dashboard() {
       ? <OverviewUser authedFetch={authedFetch} me={me} onOpenEvent={openEvent} />
       : <OverviewAdmin authedFetch={authedFetch} onOpenEvent={openEvent} onOpenUser={u => go('user', { user: u })} />;
   } else if (nav.page === 'activity') {
-    const uuid = showMe ? me.user_uuid : null;
-    header = <Segmented value={view} onChange={v => go('activity', { view: v, scope: nav.params.scope })} options={[['requests', 'Requests'], ['sessions', 'Sessions']]} />;
-    content = view === 'sessions'
-      ? <SessionsView authedFetch={authedFetch} uuid={uuid} showUser={!showMe} initialSession={nav.params.session || null} />
-      : <LogsView authedFetch={authedFetch} uuid={uuid} initialEvent={nav.params.event || null} onOpenSession={openSession} />;
+    if (isAdmin && !nav.params.user_uuid) {
+      header = null;
+      content = (
+        <AdminActivityUserList
+          authedFetch={authedFetch}
+          onSelectUser={u => go('activity', { user_uuid: u.user_uuid, user_email: u.email, view: 'requests' })}
+          onSelectAll={() => go('activity', { user_uuid: 'all', user_email: 'All Users (System-wide)', view: 'requests' })}
+        />
+      );
+    } else {
+      const isSpecificAdminUser = isAdmin && nav.params.user_uuid;
+      const targetUuid = isSpecificAdminUser
+        ? (nav.params.user_uuid === 'all' ? null : nav.params.user_uuid)
+        : (showMe ? me.user_uuid : null);
+
+      header = (
+        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: '14px', width: '100%' }}>
+          {isSpecificAdminUser ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <button
+                onClick={() => go('activity', { user_uuid: null, user_email: null, view: 'requests' })}
+                style={{
+                  background: 'rgba(0, 242, 254, 0.08)',
+                  border: `1px solid rgba(0, 242, 254, 0.3)`,
+                  color: '#00f2fe',
+                  padding: '7px 14px',
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  fontSize: '0.84rem',
+                  fontWeight: 600,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                }}
+              >
+                ← Back to Users
+              </button>
+              <div style={{
+                padding: '6px 12px',
+                borderRadius: '8px',
+                background: 'rgba(12, 19, 39, 0.8)',
+                border: `1px solid ${C.border}`,
+                fontSize: '0.85rem',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+              }}>
+                <span style={{ color: '#00f2fe', fontWeight: 700 }}>
+                  👤 {nav.params.user_email || nav.params.user_uuid}
+                </span>
+                {nav.params.user_uuid !== 'all' && (
+                  <span style={{ color: C.faint, fontSize: '0.74rem', fontFamily: mono }}>
+                    ({nav.params.user_uuid})
+                  </span>
+                )}
+              </div>
+            </div>
+          ) : <div />}
+
+          <Segmented
+            value={view}
+            onChange={v => go('activity', {
+              view: v,
+              scope: nav.params.scope,
+              user_uuid: nav.params.user_uuid,
+              user_email: nav.params.user_email,
+            })}
+            options={[['requests', 'Requests'], ['sessions', 'Sessions']]}
+          />
+        </div>
+      );
+
+      content = view === 'sessions'
+        ? <SessionsView authedFetch={authedFetch} uuid={targetUuid} showUser={targetUuid === null} initialSession={nav.params.session || null} />
+        : <LogsView authedFetch={authedFetch} uuid={targetUuid} initialEvent={nav.params.event || null} onOpenSession={openSession} />;
+    }
   } else if (nav.page === 'trust') {
     content = <TrustAnalyticsView authedFetch={authedFetch} me={me} isAdmin={isAdmin} initialUuid={nav.params.user_uuid || null} />;
   } else if (nav.page === 'users' && isAdmin) {

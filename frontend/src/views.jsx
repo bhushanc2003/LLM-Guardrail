@@ -322,6 +322,214 @@ export function SessionsView({ authedFetch, uuid = null, showUser = false, initi
   );
 }
 
+// ---------- Activity Users List (Admin) ----------
+
+export function AdminActivityUserList({ authedFetch, onSelectUser, onSelectAll }) {
+  const [users, setUsers] = useState([]);
+  const [query, setQuery] = useState('');
+  const [filter, setFilter] = useState('all');
+  const [sort, setSort] = useState('requests');
+
+  usePoll(async (isCancelled) => {
+    const r = await authedFetch('/api/admin/users');
+    if (r.ok && !isCancelled()) setUsers(await r.json());
+  }, [authedFetch], 15000);
+
+  const q = query.trim().toLowerCase();
+  let list = users.filter(u => (!q || u.email.toLowerCase().includes(q) || (u.name || '').toLowerCase().includes(q)));
+  if (filter === 'violations') list = list.filter(u => u.violations > 0);
+  if (filter === 'admins') list = list.filter(u => u.role === 'admin');
+
+  const sorters = {
+    requests: (a, b) => (b.requests || 0) - (a.requests || 0),
+    violations: (a, b) => (b.violations || 0) - (a.violations || 0),
+    last_active: (a, b) => (b.last_active || '').localeCompare(a.last_active || ''),
+  };
+  list = [...list].sort(sorters[sort] || sorters.requests);
+
+  const totalReqs = users.reduce((acc, u) => acc + (u.requests || 0), 0);
+  const totalViolations = users.reduce((acc, u) => acc + (u.violations || 0), 0);
+
+  return (
+    <div style={{ display: 'grid', gap: '20px' }}>
+      {/* Top Summary Banner */}
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+        gap: '14px',
+      }}>
+        <Kpi label="Active Users" value={users.length} hint="Registered users with telemetry" />
+        <Kpi label="Total Audited Requests" value={totalReqs.toLocaleString()} hint="Across all conversation sessions" />
+        <Kpi
+          label="Total Policy Violations"
+          value={totalViolations.toLocaleString()}
+          hint="Redacted and blocked prompt payloads"
+        />
+      </div>
+
+      {/* Main Glassmorphic Card */}
+      <Card
+        title={`Select User to View Activity Logs (${list.length})`}
+        action={
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', alignItems: 'center' }}>
+            <input
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+              placeholder="Search user name or email…"
+              style={{ ...inputStyle, width: '220px' }}
+            />
+            <select value={filter} onChange={e => setFilter(e.target.value)} style={inputStyle}>
+              <option value="all">All users</option>
+              <option value="violations">With violations</option>
+              <option value="admins">Admins</option>
+            </select>
+            <select value={sort} onChange={e => setSort(e.target.value)} style={inputStyle}>
+              <option value="requests">Sort: Most requests</option>
+              <option value="violations">Sort: Most violations</option>
+              <option value="last_active">Sort: Last active</option>
+            </select>
+            {onSelectAll && (
+              <button
+                onClick={onSelectAll}
+                style={{
+                  ...btn,
+                  padding: '7px 14px',
+                  fontSize: '0.8rem',
+                  background: 'rgba(0, 242, 254, 0.12)',
+                  color: '#00f2fe',
+                  border: '1px solid rgba(0, 242, 254, 0.3)',
+                  boxShadow: 'none',
+                }}
+                title="View all logs from all users combined"
+              >
+                ⚡ View All Combined
+              </button>
+            )}
+          </div>
+        }
+      >
+        {list.length === 0 ? (
+          <Empty>No users match your filter.</Empty>
+        ) : (
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr>
+                  <th style={cellTh}>User / Identity</th>
+                  <th style={cellTh}>Role</th>
+                  <th style={{ ...cellTh, textAlign: 'right' }}>Requests</th>
+                  <th style={{ ...cellTh, textAlign: 'right' }}>Violations</th>
+                  <th style={{ ...cellTh, textAlign: 'right' }}>PII Found</th>
+                  <th style={cellTh}>Last Active</th>
+                  <th style={{ ...cellTh, textAlign: 'right' }}>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {list.map(u => (
+                  <tr
+                    key={u.user_uuid}
+                    onClick={() => onSelectUser(u)}
+                    style={{
+                      cursor: 'pointer',
+                      transition: 'background 0.15s ease',
+                    }}
+                    onMouseEnter={e => (e.currentTarget.style.background = 'rgba(0, 242, 254, 0.06)')}
+                    onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                  >
+                    <td style={cellTd}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <div style={{
+                          width: '34px',
+                          height: '34px',
+                          borderRadius: '8px',
+                          background: 'linear-gradient(135deg, rgba(0, 242, 254, 0.2), rgba(168, 85, 247, 0.2))',
+                          border: '1px solid rgba(0, 242, 254, 0.3)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontSize: '1rem',
+                          flex: 'none',
+                        }}>
+                          👤
+                        </div>
+                        <div>
+                          <div style={{ fontWeight: 600, color: '#f8fafc' }}>
+                            {u.email}
+                          </div>
+                          <div style={{ fontSize: '0.75rem', color: C.faint, fontFamily: mono }}>
+                            {u.user_uuid} {u.name ? `· ${u.name}` : ''}
+                          </div>
+                        </div>
+                      </div>
+                    </td>
+                    <td style={cellTd}>
+                      <span style={{
+                        padding: '3px 8px',
+                        borderRadius: '6px',
+                        fontSize: '0.72rem',
+                        fontWeight: 700,
+                        textTransform: 'uppercase',
+                        background: u.role === 'admin' ? 'rgba(168, 85, 247, 0.15)' : 'rgba(255, 255, 255, 0.06)',
+                        color: u.role === 'admin' ? '#c084fc' : C.muted,
+                        border: u.role === 'admin' ? '1px solid rgba(168, 85, 247, 0.4)' : `1px solid ${C.border}`,
+                      }}>
+                        {u.role}
+                      </span>
+                    </td>
+                    <td style={{ ...cellTd, textAlign: 'right', fontWeight: 700, color: '#00f2fe', fontFamily: mono }}>
+                      {(u.requests || 0).toLocaleString()}
+                    </td>
+                    <td style={{ ...cellTd, textAlign: 'right', fontFamily: mono }}>
+                      <span style={{
+                        padding: '2px 8px',
+                        borderRadius: '6px',
+                        fontSize: '0.8rem',
+                        fontWeight: 700,
+                        background: (u.violations || 0) > 0 ? 'rgba(244, 63, 94, 0.12)' : 'rgba(16, 185, 129, 0.1)',
+                        color: (u.violations || 0) > 0 ? '#f43f5e' : '#10b981',
+                        border: (u.violations || 0) > 0 ? '1px solid rgba(244, 63, 94, 0.3)' : '1px solid rgba(16, 185, 129, 0.3)',
+                      }}>
+                        {(u.violations || 0).toLocaleString()}
+                      </span>
+                    </td>
+                    <td style={{ ...cellTd, textAlign: 'right', color: C.text, fontFamily: mono }}>
+                      {(u.pii_detected || 0).toLocaleString()}
+                    </td>
+                    <td style={{ ...cellTd, color: C.muted, fontSize: '0.8rem', whiteSpace: 'nowrap' }}>
+                      {u.last_active ? new Date(u.last_active).toLocaleString() : 'never'}
+                    </td>
+                    <td style={{ ...cellTd, textAlign: 'right' }}>
+                      <button
+                        onClick={e => { e.stopPropagation(); onSelectUser(u); }}
+                        style={{
+                          background: 'linear-gradient(135deg, rgba(0, 242, 254, 0.15) 0%, rgba(168, 85, 247, 0.1) 100%)',
+                          color: '#00f2fe',
+                          border: '1px solid rgba(0, 242, 254, 0.35)',
+                          borderRadius: '6px',
+                          padding: '6px 14px',
+                          fontSize: '0.8rem',
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          transition: 'all 0.15s ease',
+                        }}
+                      >
+                        Open Logs →
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+    </div>
+  );
+}
+
 // ---------- Users (admin) ----------
 
 export function UsersView({ authedFetch, onOpenUser }) {
