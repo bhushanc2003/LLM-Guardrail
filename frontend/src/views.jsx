@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { C, Card, Kpi, DecisionChip, Empty, Loader, ScrollBox, LimitSelect, RequestTable, RequestDetail, mono } from './ui.jsx';
+import { C, Card, Kpi, DecisionChip, Empty, Loader, ScrollBox, LimitSelect, RequestTable, RequestDetail, ToggleSwitch, mono } from './ui.jsx';
 
 const inputStyle = {
   background: 'rgba(6, 10, 24, 0.75)',
@@ -696,7 +696,10 @@ export function UserView({ authedFetch, user, onOpenEvent }) {
 export function OverviewUser({ authedFetch, me, onOpenEvent }) {
   const uuid = me.user_uuid;
   const [mode, setMode] = useState(me.action_mode || '');
+  const [hipaa, setHipaa] = useState(me.hipaa_enabled !== false);
+  const [dpdp, setDpdp] = useState(me.dpdp_enabled !== false);
   const [saved, setSaved] = useState('');
+  const [compSaved, setCompSaved] = useState('');
   const [copied, setCopied] = useState(false);
   const [stats, setStats] = useState(null);
   const [tokens, setTokens] = useState(null);
@@ -709,6 +712,8 @@ export function OverviewUser({ authedFetch, me, onOpenEvent }) {
       if (r.ok) {
         const data = await r.json();
         setMode(data.action_mode || '');
+        if (data.hipaa_enabled !== undefined) setHipaa(data.hipaa_enabled);
+        if (data.dpdp_enabled !== undefined) setDpdp(data.dpdp_enabled);
       }
     };
     syncMode();
@@ -742,6 +747,18 @@ export function OverviewUser({ authedFetch, me, onOpenEvent }) {
     });
     setSaved(res.ok ? 'Saved' : `Could not save (HTTP ${res.status})`);
     setTimeout(() => setSaved(''), 2000);
+  };
+
+  const saveCompliance = async (nextHipaa, nextDpdp) => {
+    setHipaa(nextHipaa);
+    setDpdp(nextDpdp);
+    const res = await authedFetch(`/api/users/${uuid}/compliance`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ hipaa_enabled: nextHipaa, dpdp_enabled: nextDpdp }),
+    });
+    setCompSaved(res.ok ? 'Saved' : `Error (HTTP ${res.status})`);
+    setTimeout(() => setCompSaved(''), 2000);
   };
 
   if (loading && !stats) {
@@ -788,6 +805,36 @@ export function OverviewUser({ authedFetch, me, onOpenEvent }) {
               <span style={{ color: C.accent }}>⚡</span> Compatible with Cline, Cursor, Open WebUI, and LangChain OpenAI base URLs.
             </div>
           </Card>
+
+          <Card
+            title="Compliance Frameworks"
+            action={
+              <span style={{ color: compSaved ? C.allow : C.accent, fontSize: '0.82rem', fontWeight: 600 }}>
+                {compSaved || (hipaa && dpdp ? 'Active: HIPAA + DPDP' : hipaa ? 'Active: HIPAA only' : dpdp ? 'Active: DPDP only' : 'Pass-Through (No checks)')}
+              </span>
+            }
+          >
+            <div style={{ display: 'grid', gap: '10px' }}>
+              <ToggleSwitch
+                checked={hipaa}
+                onChange={next => saveCompliance(next, dpdp)}
+                label="HIPAA Compliance (US PHI)"
+                description="Enforces 18 Safe Harbor medical & patient identifiers (MRN, health plan, clinical dates, SSN...)"
+                icon="🏥"
+              />
+              <ToggleSwitch
+                checked={dpdp}
+                onChange={next => saveCompliance(hipaa, next)}
+                label="DPDP Compliance (India 2023)"
+                description="Enforces 27 Personal Identifiers (Aadhaar, PAN, UPI, Indian mobile, PIN, salary, employee ID...)"
+                icon="🇮🇳"
+              />
+            </div>
+            <div style={{ color: C.faint, fontSize: '0.78rem', marginTop: '10px' }}>
+              Toggle ON to inspect and protect against that compliance framework. When toggled OFF, those identifiers pass through unflagged.
+            </div>
+          </Card>
+
           <Card title="How PII is handled for you">
             <select value={mode} onChange={e => saveMode(e.target.value)} style={{ ...inputStyle, width: '100%' }}>
               {modes.map(([value, text]) => <option key={value} value={value}>{text}</option>)}

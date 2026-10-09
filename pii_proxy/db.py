@@ -84,6 +84,8 @@ class DBUser(Base):
     user_uuid = sa.Column(sa.Text, unique=True, nullable=False, index=True)
     role = sa.Column(sa.Text, nullable=False, default="user")
     action_mode = sa.Column(sa.Text, nullable=True)
+    hipaa_enabled = sa.Column(sa.Boolean, nullable=True, default=True)
+    dpdp_enabled = sa.Column(sa.Boolean, nullable=True, default=True)
     created_at = sa.Column(sa.DateTime(timezone=True), default=datetime.utcnow)
 
     sessions = relationship("DBSession", back_populates="user", cascade="all, delete-orphan")

@@ -439,3 +439,62 @@ export function RequestDetail({ eventId, authedFetch, onBack }) {
     </div>
   );
 }
+
+export function ToggleSwitch({ checked, onChange, label, description, icon = '🛡️' }) {
+  return (
+    <div
+      onClick={() => onChange(!checked)}
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '12px 16px',
+        borderRadius: '10px',
+        background: checked
+          ? 'linear-gradient(135deg, rgba(0, 242, 254, 0.08) 0%, rgba(168, 85, 247, 0.06) 100%)'
+          : 'rgba(6, 10, 24, 0.6)',
+        border: `1px solid ${checked ? 'rgba(0, 242, 254, 0.35)' : C.border}`,
+        cursor: 'pointer',
+        transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+        userSelect: 'none',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+        <span style={{ fontSize: '1.25rem' }}>{icon}</span>
+        <div>
+          <div style={{ fontWeight: 700, fontSize: '0.92rem', color: checked ? '#f8fafc' : C.muted }}>
+            {label}
+          </div>
+          {description && (
+            <div style={{ fontSize: '0.76rem', color: C.faint, marginTop: '2px' }}>
+              {description}
+            </div>
+          )}
+        </div>
+      </div>
+      <div style={{
+        width: '46px',
+        height: '24px',
+        borderRadius: '12px',
+        background: checked ? 'linear-gradient(135deg, #00f2fe, #a855f7)' : 'rgba(255, 255, 255, 0.1)',
+        padding: '2px',
+        boxSizing: 'border-box',
+        display: 'flex',
+        alignItems: 'center',
+        transition: 'all 0.2s ease',
+        boxShadow: checked ? '0 0 12px rgba(0, 242, 254, 0.4)' : 'none',
+        flex: 'none',
+      }}>
+        <div style={{
+          width: '20px',
+          height: '20px',
+          borderRadius: '50%',
+          background: '#ffffff',
+          transform: checked ? 'translateX(22px)' : 'translateX(0px)',
+          transition: 'transform 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+          boxShadow: '0 1px 3px rgba(0, 0, 0, 0.4)',
+        }} />
+      </div>
+    </div>
+  );
+}

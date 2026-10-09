@@ -4,32 +4,20 @@ from dataclasses import dataclass
 
 @dataclass
 class PIIMatch:
-    entity_type: str        # e.g., "NAME", "EMAIL", "IP_ADDRESS"
-    category_id: int        # 1 to 15 based on HIPAA / compliance list
+    entity_type: str        # e.g., "AADHAAR", "PAN", "UPI_ID", "NAME", "EMAIL"
+    category_id: int        # 1 to 15 based on standard DB categories
     category_name: str      # Human readable category name
     start: int
     end: int
     text: str
     confidence: float
+    framework: str = "SHARED" # "HIPAA", "DPDP", or "SHARED"
 
 class PIIDetector:
     """
-    Comprehensive PII Detector covering all 15 Safe Harbor / DPDP categories:
-    1. Names (including initials or family/employer names)
-    2. Geographical data smaller than a state (street address, city, county, ZIP code)
-    3. Dates directly related to an individual (birth, admission, discharge, death; years excluded)
-    4. Telephone numbers
-    5. Fax numbers
-    6. Email addresses
-    7. Social Security numbers (SSN)
-    8. Medical record numbers (MRN)
-    9. Health plan beneficiary numbers
-    10. Account numbers (bank/credit card)
-    11. Certificate/license numbers
-    12. Vehicle identifiers and serial numbers (VIN, license plates)
-    13. Device identifiers and serial numbers (MAC, UUID, IMEI, Serial)
-    14. Web URLs
-    15. IP address numbers (IPv4 / IPv6)
+    Multi-Compliance Zero-Trust PII & PHI Detector supporting both:
+    1. HIPAA Safe Harbor (US Healthcare & 18 PHI Categories)
+    2. DPDP Act 2023 (Digital Personal Data Protection Act - India 27 Categories)
     """
 
     CATEGORIES = {
@@ -68,9 +56,14 @@ class PIIDetector:
                 self.presidio_analyzer = None
 
     def _compile_regexes(self):
-        """Compile optimized regex patterns for exact match PII categories."""
-        
-        # 15. IP Address (IPv4 & IPv6)
+        """Compile regex patterns for Shared, HIPAA, and Indian DPDP compliance frameworks."""
+
+        # ----------------------------------------------------
+        # SHARED PATTERNS (Evaluated by both HIPAA and DPDP)
+        # ----------------------------------------------------
+        self.regex_email = re.compile(
+            r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b'
+        )
         self.regex_ipv4 = re.compile(
             r'\b(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\b'
         )
@@ -79,57 +72,16 @@ class PIIDetector:
             r'\b(?:[0-9a-fA-F]{1,4}:){1,7}:|'
             r'::(?:[0-9a-fA-F]{1,4}:){0,6}[0-9a-fA-F]{1,4}\b'
         )
-
-        # 14. Web URLs
         self.regex_url = re.compile(
             r'\bhttps?://[^\s<>"{}|\\^`]+[^\s<>"{}|\\^`.,;:!?]|'
             r'\bwww\.[a-zA-Z0-9-]+\.[a-zA-Z]{2,}[^\s<>"{}|\\^`]*'
         )
-
-        # 6. Email addresses
-        self.regex_email = re.compile(
-            r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b'
-        )
-
-        # 7. SSN
-        self.regex_ssn = re.compile(
-            r'\b\d{3}-\d{2}-\d{4}\b|'
-            r'(?:SSN|Social Security|Soc Sec)[:#\s]+\d{3}[-\s]?\d{2}[-\s]?\d{4}\b',
-            re.IGNORECASE
-        )
-
-        # 5. Fax numbers (Check Fax keyword before general Phone)
-        self.regex_fax = re.compile(
-            r'(?:Fax|FAX|fax)[:#\s]+(?:\+?\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b'
-        )
-
-        # 4. Telephone numbers
         self.regex_phone = re.compile(
             r'(?:\+?\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b|'
             r'\b\d{3}[-.\s]\d{4}\b|'
             r'(?:Phone|Tel|Mobile|Cell)[:#\s]+(?:\+?\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b',
             re.IGNORECASE
         )
-
-        # 8. Medical Record Number (MRN)
-        self.regex_mrn = re.compile(
-            r'(?:MRN|Medical Record Number|Med Rec #|Record #)[:#\s]+[A-Za-z0-9-]{6,12}\b|'
-            r'\bMRN-\d{6,10}\b',
-            re.IGNORECASE
-        )
-
-        # 8. Patient IDs written as "id 512592" / "Patient ID: 512592"
-        self.regex_patient_id = re.compile(
-            r'\b(?i:patient\s+id|id)[:#\s]+\d{5,12}\b'
-        )
-
-        # 9. Health plan beneficiary numbers
-        self.regex_health_plan = re.compile(
-            r'(?:Health Plan|Beneficiary ID|Policy #|Member ID|Insurance ID|HICN|Medicare ID)[:#\s]+[A-Za-z0-9-]{7,15}\b',
-            re.IGNORECASE
-        )
-
-        # 10. Account numbers (Credit Card + Financial Accounts)
         self.regex_credit_card = re.compile(
             r'\b(?:4[0-9]{12}(?:[0-9]{3})?|5[1-5][0-9]{14}|3[47][0-9]{13}|3(?:0[0-5]|[68][0-9])[0-9]{11}|6(?:011|5[0-9]{2})[0-9]{12})\b|'
             r'\b\d{4}[-\s]\d{4}[-\s]\d{4}[-\s]\d{4}\b'
@@ -138,14 +90,63 @@ class PIIDetector:
             r'(?:Account #|Acct #|Bank Account|IBAN)[:#\s]+[A-Za-z0-9-]{8,22}\b',
             re.IGNORECASE
         )
+        self.regex_mac = re.compile(
+            r'\b(?:[0-9A-Fa-f]{2}[:-]){5}(?:[0-9A-Fa-f]{2})\b'
+        )
+        self.regex_uuid = re.compile(
+            r'\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b'
+        )
+        self.regex_device_sn = re.compile(
+            r'(?:Serial Number|Serial #|IMEI|Device ID|Advertising ID)[:#\s]+[A-Za-z0-9-]{8,20}\b',
+            re.IGNORECASE
+        )
+        self.regex_address = re.compile(
+            r'(?:Address|Location|Residential Address)[:#\s]+[A-Za-z0-9\s.,#-]+?(?=\s*,|\s*Zip|\s*PIN|\s*\n|$)|'
+            r'\b\d{1,5}\s+[A-Za-z0-9\s.,#-]+?\s+(?:Street|St|Terrace|Avenue|Ave|Road|Rd|Boulevard|Blvd|Drive|Dr|Lane|Ln|Court|Ct|Circle|Cir|Way)\b',
+            re.IGNORECASE
+        )
+        self.regex_city_county = re.compile(
+            r'(?:City|County|Town|Locality|District)[:#\s]+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)'
+        )
+        self.regex_individual_date = re.compile(
+            r'(?:DOB|Birth|Born|Date of Birth)[:#\s]+'
+            r'(?:\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|\d{4}[/-]\d{1,2}[/-]\d{1,2}|[A-Za-z]{3,9}\s+\d{1,2}(?:st|nd|rd|th)?,?\s*\d{4})\b|'
+            r'\b(?:0[1-9]|1[0-2])[/-](?:0[1-9]|[12][0-9]|3[01])[/-](?:19|20)\d{2}\b|'
+            r'\b(?:19|20)\d{2}[/-](?:0[1-9]|1[0-2])[/-](?:0[1-9]|[12][0-9]|3[01])\b',
+            re.IGNORECASE
+        )
+        self.regex_name_context = re.compile(
+            r'(?i:Dr\.|Mr\.|Mrs\.|Ms\.|Prof\.|Patient|Employee|Doctor|User|Person)[:#\s]+'
+            r'([A-Z][a-z]+(?:\s+[A-Z]\.?)?\s+[A-Z][a-z]+)'
+        )
 
-        # 11. Certificate / License numbers
+        # ----------------------------------------------------
+        # HIPAA SPECIFIC PATTERNS
+        # ----------------------------------------------------
+        self.regex_ssn = re.compile(
+            r'\b\d{3}-\d{2}-\d{4}\b|'
+            r'(?:SSN|Social Security|Soc Sec)[:#\s]+\d{3}[-\s]?\d{2}[-\s]?\d{4}\b',
+            re.IGNORECASE
+        )
+        self.regex_fax = re.compile(
+            r'(?:Fax|FAX|fax)[:#\s]+(?:\+?\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b'
+        )
+        self.regex_mrn = re.compile(
+            r'(?:MRN|Medical Record Number|Med Rec #|Record #)[:#\s]+[A-Za-z0-9-]{6,12}\b|'
+            r'\bMRN-\d{6,10}\b',
+            re.IGNORECASE
+        )
+        self.regex_patient_id = re.compile(
+            r'\b(?i:patient\s+id|patient\s+#)[:#\s]+[A-Za-z0-9-]{5,12}\b'
+        )
+        self.regex_health_plan = re.compile(
+            r'(?:Health Plan|Beneficiary ID|Policy #|Member ID|Insurance ID|HICN|Medicare ID)[:#\s]+[A-Za-z0-9-]{7,15}\b',
+            re.IGNORECASE
+        )
         self.regex_license = re.compile(
             r'(?:Driver\'?s License|DL #|License #|Cert #|Certificate #)[:#\s]+[A-Za-z0-9-]{6,16}\b',
             re.IGNORECASE
         )
-
-        # 12. Vehicle Identifiers (VIN & License Plates)
         self.regex_vin = re.compile(
             r'(?:VIN|Vehicle ID)[:#\s]+[A-HJ-NPR-Z0-9]{17}\b|'
             r'\b[A-HJ-NPR-Z0-9]{17}\b',
@@ -155,56 +156,106 @@ class PIIDetector:
             r'(?:License Plate|Plate #|Tag #)[:#\s]+[A-Z0-9-]{3,8}\b',
             re.IGNORECASE
         )
-
-        # 13. Device Identifiers (MAC, UUID, IMEI, Serial Number)
-        self.regex_mac = re.compile(
-            r'\b(?:[0-9A-Fa-f]{2}[:-]){5}(?:[0-9A-Fa-f]{2})\b'
-        )
-        self.regex_uuid = re.compile(
-            r'\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b'
-        )
-        self.regex_device_sn = re.compile(
-            r'(?:Serial Number|Serial #|IMEI|Device ID)[:#\s]+[A-Za-z0-9-]{8,20}\b',
-            re.IGNORECASE
-        )
-
-        # 2. Geographical Data smaller than a state
         self.regex_zip = re.compile(
             r'(?:ZIP|Zip Code|Postal Code)[:#\s]+\d{5}(?:-\d{4})?\b|'
             r'\b\d{5}(?:-\d{4})?\b',
             re.IGNORECASE
         )
-        self.regex_address = re.compile(
-            r'(?:Address|Location)[:#\s]+[A-Za-z0-9\s.,#-]+?(?=\s*,|\s*Zip|\s*\n|$)|'
-            r'\b\d{1,5}\s+[A-Za-z0-9\s.,#-]+?\s+(?:Street|St|Terrace|Avenue|Ave|Road|Rd|Boulevard|Blvd|Drive|Dr|Lane|Ln|Court|Ct|Circle|Cir|Way)\b',
-            re.IGNORECASE
-        )
-        self.regex_city_county = re.compile(
-            r'(?:City|County|Town|Locality)[:#\s]+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)'
-        )
-
-        # 3. Dates directly related to an individual (Birth, Admission, Discharge, Death)
-        # Note: Excludes standalone 4-digit years like 2023 or 2026.
-        self.regex_individual_date = re.compile(
-            r'(?:DOB|Birth|Born|Admitted|Admission|Discharged|Discharge|Died|Death|Date of Birth|Date of Admission)[:#\s]+'
-            r'(?:\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|\d{4}[/-]\d{1,2}[/-]\d{1,2}|[A-Za-z]{3,9}\s+\d{1,2}(?:st|nd|rd|th)?,?\s*\d{4})\b|'
-            r'\b(?:0[1-9]|1[0-2])[/-](?:0[1-9]|[12][0-9]|3[01])[/-](?:19|20)\d{2}\b|'
-            r'\b(?:19|20)\d{2}[/-](?:0[1-9]|1[0-2])[/-](?:0[1-9]|[12][0-9]|3[01])\b',
+        self.regex_medical_date = re.compile(
+            r'(?:Admitted|Admission|Discharged|Discharge|Died|Death|Surgery Date|Appointment Date|Date of Admission)[:#\s]+'
+            r'(?:\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|\d{4}[/-]\d{1,2}[/-]\d{1,2}|[A-Za-z]{3,9}\s+\d{1,2}(?:st|nd|rd|th)?,?\s*\d{4})\b',
             re.IGNORECASE
         )
 
-        # 1. Names (Titles, Prefixes, Patient/Employee Context) - Strictly Case Sensitive
-        self.regex_name_context = re.compile(
-            r'(?i:Dr\.|Mr\.|Mrs\.|Ms\.|Prof\.|Patient|Employee|Doctor)[:#\s]+'
-            r'([A-Z][a-z]+(?:\s+[A-Z]\.?)?\s+[A-Z][a-z]+)'
+        # ----------------------------------------------------
+        # DPDP SPECIFIC PATTERNS (India Personal Data Identifiers)
+        # ----------------------------------------------------
+        # 1. Aadhaar (12 digits, format: 4 4 4 or with keyword)
+        self.regex_aadhaar = re.compile(
+            r'\b[2-9]\d{3}\s\d{4}\s\d{4}\b|'
+            r'(?:Aadhaar|UIDAI|Aadhar|Aadhaar No)[:#\s]+[2-9]\d{3}[\s-]?\d{4}[\s-]?\d{4}\b',
+            re.IGNORECASE
+        )
+        # 2. PAN Card (5 letters, 4 digits, 1 letter)
+        self.regex_pan = re.compile(
+            r'\b[A-Z]{5}[0-9]{4}[A-Z]\b|'
+            r'(?:PAN|PAN Card|PAN No)[:#\s]+[A-Z]{5}[0-9]{4}[A-Z]\b',
+            re.IGNORECASE
+        )
+        # 3. UPI ID (username@provider handles)
+        self.regex_upi = re.compile(
+            r'\b[a-zA-Z0-9.\-_]{2,64}@(okaxis|okhdfcbank|oksbi|okicici|paytm|ybl|ibl|upi|axl|apl|barodampay|federal|kotak|postbank|idfcbank|gpay|phonepe)\b|'
+            r'(?:UPI|VPA|UPI ID)[:#\s]+[a-zA-Z0-9.\-_]{2,64}@[a-zA-Z0-9.\-_]{2,32}\b',
+            re.IGNORECASE
+        )
+        # 4. Indian Mobile Number (+91 [6-9]XXXXXXXXX)
+        self.regex_indian_mobile = re.compile(
+            r'\b(?:\+91[\s-]?)?[6-9]\d{9}\b'
+        )
+        # 5. Indian PIN Code (6 digits with PIN keyword)
+        self.regex_pin_code = re.compile(
+            r'(?:PIN|PIN Code|Pin|Postal Code)[:#\s]+[1-9][0-9]{5}\b',
+            re.IGNORECASE
+        )
+        # 6. Indian Passport (1 letter + 7 digits)
+        self.regex_indian_passport = re.compile(
+            r'(?:Passport|Passport No|Indian Passport)[:#\s]+[A-Z][0-9]{7}\b',
+            re.IGNORECASE
+        )
+        # 7. Indian Voter ID (EPIC: 3 letters + 7 digits)
+        self.regex_voter_id = re.compile(
+            r'(?:Voter ID|EPIC|Voter ID No)[:#\s]+[A-Z]{3}[0-9]{7}\b|'
+            r'\b[A-Z]{3}[0-9]{7}\b',
+            re.IGNORECASE
+        )
+        # 8. Indian Driving Licence
+        self.regex_indian_dl = re.compile(
+            r'(?:Driving License|DL No|Driving Licence)[:#\s]+[A-Z]{2}[0-9]{2}[-\s]?[0-9]{11}\b|'
+            r'\b[A-Z]{2}[0-9]{2}[-\s]?[0-9]{11}\b',
+            re.IGNORECASE
+        )
+        # 9. Employee ID & Workplace Information
+        self.regex_emp_id = re.compile(
+            r'(?:Employee ID|Emp ID|Staff ID|Worker ID)[:#\s]+[A-Za-z0-9-]{4,16}\b',
+            re.IGNORECASE
+        )
+        # 10. Salary & Financial History
+        self.regex_salary = re.compile(
+            r'(?:Salary|Income|CTC|Annual Package|Package|Stipend)[:#\s]+(?:₹|Rs\.?|INR\s*)?[\d.,]+(?:\s*(?:LPA|per annum|p\.a\.|per month|pm|lakhs?|crores?|k))?\b',
+            re.IGNORECASE
+        )
+        # 11. Student ID & Academic Info
+        self.regex_student_id = re.compile(
+            r'(?:Student ID|Roll No|Enrollment No|Registration No)[:#\s]+[A-Za-z0-9-]{4,16}\b',
+            re.IGNORECASE
+        )
+        # 12. Age & Gender when linked to an individual
+        self.regex_age_gender = re.compile(
+            r'(?:Age|Aged)[:#\s]+\d{1,3}\b|'
+            r'\b(?:Male|Female|Non-binary),?\s*(?:aged?\s*\d{1,3}|\d{1,3}\s*years?\s*old)\b',
+            re.IGNORECASE
+        )
+        # 13. GPS Coordinates & Geolocation
+        self.regex_gps = re.compile(
+            r'(?:GPS|Coordinates|Geolocation)[:#\s]+[-+]?(?:[1-8]?\d(?:\.\d+)?|90(?:\.0+)?),\s*[-+]?(?:180(?:\.0+)?|(?:1[0-7]\d|\d{1,2})(?:\.\d+)?)\b',
+            re.IGNORECASE
+        )
+        # 14. IFSC Code
+        self.regex_ifsc = re.compile(
+            r'\b[A-Z]{4}0[A-Z0-9]{6}\b'
         )
 
-    def detect(self, text: str) -> List[PIIMatch]:
-        """Detect all PII entities in text and return non-overlapping list of matches sorted by start index."""
+    def detect(self, text: str, check_hipaa: bool = True, check_dpdp: bool = True) -> List[PIIMatch]:
+        """
+        Detect PII entities in text based on active compliance frameworks (HIPAA / DPDP).
+        If both are False, returns empty list (pass-through).
+        """
+        if not check_hipaa and not check_dpdp:
+            return []
+
         matches: List[PIIMatch] = []
 
-        # Helper to add regex matches
-        def _add_matches(regex_obj, entity_type: str, category_id: int, confidence: float = 0.95):
+        def _add(regex_obj, entity_type: str, category_id: int, confidence: float = 0.95, framework: str = "SHARED"):
             for m in regex_obj.finditer(text):
                 matches.append(PIIMatch(
                     entity_type=entity_type,
@@ -213,34 +264,28 @@ class PIIDetector:
                     start=m.start(),
                     end=m.end(),
                     text=m.group(0),
-                    confidence=confidence
+                    confidence=confidence,
+                    framework=framework
                 ))
 
-        # Run regex rules in priority order
-        _add_matches(self.regex_email, "EMAIL", 6, 0.99)
-        _add_matches(self.regex_url, "URL", 14, 0.98)
-        _add_matches(self.regex_ipv4, "IP_ADDRESS", 15, 0.99)
-        _add_matches(self.regex_ipv6, "IP_ADDRESS", 15, 0.99)
-        _add_matches(self.regex_ssn, "SSN", 7, 0.98)
-        _add_matches(self.regex_fax, "FAX", 5, 0.95)
-        _add_matches(self.regex_phone, "PHONE", 4, 0.90)
-        _add_matches(self.regex_mrn, "MRN", 8, 0.96)
-        _add_matches(self.regex_patient_id, "PATIENT_ID", 8, 0.9)
-        _add_matches(self.regex_health_plan, "HEALTH_BENEFICIARY_ID", 9, 0.95)
-        _add_matches(self.regex_credit_card, "ACCOUNT_NUMBER", 10, 0.98)
-        _add_matches(self.regex_bank_account, "ACCOUNT_NUMBER", 10, 0.95)
-        _add_matches(self.regex_license, "LICENSE_NUMBER", 11, 0.94)
-        _add_matches(self.regex_vin, "VEHICLE_ID", 12, 0.95)
-        _add_matches(self.regex_license_plate, "VEHICLE_ID", 12, 0.92)
-        _add_matches(self.regex_mac, "DEVICE_ID", 13, 0.98)
-        _add_matches(self.regex_uuid, "DEVICE_ID", 13, 0.98)
-        _add_matches(self.regex_device_sn, "DEVICE_ID", 13, 0.93)
-        _add_matches(self.regex_zip, "GEO_DATA", 2, 0.95)
-        _add_matches(self.regex_address, "GEO_DATA", 2, 0.92)
-        _add_matches(self.regex_city_county, "GEO_DATA", 2, 0.88)
-        _add_matches(self.regex_individual_date, "INDIVIDUAL_DATE", 3, 0.94)
+        # ----------------------------------------------------
+        # 1. EVALUATE SHARED PATTERNS (Active if either is ON)
+        # ----------------------------------------------------
+        _add(self.regex_email, "EMAIL", 6, 0.99, "SHARED")
+        _add(self.regex_url, "URL", 14, 0.98, "SHARED")
+        _add(self.regex_ipv4, "IP_ADDRESS", 15, 0.99, "SHARED")
+        _add(self.regex_ipv6, "IP_ADDRESS", 15, 0.99, "SHARED")
+        _add(self.regex_credit_card, "ACCOUNT_NUMBER", 10, 0.98, "SHARED")
+        _add(self.regex_bank_account, "ACCOUNT_NUMBER", 10, 0.95, "SHARED")
+        _add(self.regex_mac, "DEVICE_ID", 13, 0.98, "SHARED")
+        _add(self.regex_uuid, "DEVICE_ID", 13, 0.98, "SHARED")
+        _add(self.regex_device_sn, "DEVICE_ID", 13, 0.93, "SHARED")
+        _add(self.regex_phone, "PHONE", 4, 0.90, "SHARED")
+        _add(self.regex_address, "GEO_DATA", 2, 0.92, "SHARED")
+        _add(self.regex_city_county, "GEO_DATA", 2, 0.88, "SHARED")
+        _add(self.regex_individual_date, "INDIVIDUAL_DATE", 3, 0.94, "SHARED")
 
-        # Name context heuristic regex
+        # Name context heuristic
         for m in self.regex_name_context.finditer(text):
             full_match = m.group(0)
             name_part = m.group(1) if m.lastindex and m.lastindex >= 1 else full_match
@@ -253,10 +298,45 @@ class PIIDetector:
                 start=start_idx,
                 end=end_idx,
                 text=name_part,
-                confidence=0.91
+                confidence=0.91,
+                framework="SHARED"
             ))
 
-        # Secondary Presidio NLP analysis if installed
+        # ----------------------------------------------------
+        # 2. EVALUATE HIPAA SPECIFIC PATTERNS
+        # ----------------------------------------------------
+        if check_hipaa:
+            _add(self.regex_ssn, "SSN", 7, 0.98, "HIPAA")
+            _add(self.regex_fax, "FAX", 5, 0.95, "HIPAA")
+            _add(self.regex_mrn, "MRN", 8, 0.96, "HIPAA")
+            _add(self.regex_patient_id, "PATIENT_ID", 8, 0.90, "HIPAA")
+            _add(self.regex_health_plan, "HEALTH_BENEFICIARY_ID", 9, 0.95, "HIPAA")
+            _add(self.regex_license, "LICENSE_NUMBER", 11, 0.94, "HIPAA")
+            _add(self.regex_vin, "VEHICLE_ID", 12, 0.95, "HIPAA")
+            _add(self.regex_license_plate, "VEHICLE_ID", 12, 0.92, "HIPAA")
+            _add(self.regex_zip, "GEO_DATA", 2, 0.95, "HIPAA")
+            _add(self.regex_medical_date, "INDIVIDUAL_DATE", 3, 0.94, "HIPAA")
+
+        # ----------------------------------------------------
+        # 3. EVALUATE DPDP SPECIFIC PATTERNS (India Act 2023)
+        # ----------------------------------------------------
+        if check_dpdp:
+            _add(self.regex_aadhaar, "AADHAAR", 7, 0.99, "DPDP")
+            _add(self.regex_pan, "PAN", 11, 0.99, "DPDP")
+            _add(self.regex_upi, "UPI_ID", 10, 0.98, "DPDP")
+            _add(self.regex_indian_mobile, "INDIAN_MOBILE", 4, 0.95, "DPDP")
+            _add(self.regex_pin_code, "PIN_CODE", 2, 0.95, "DPDP")
+            _add(self.regex_voter_id, "VOTER_ID", 11, 0.95, "DPDP")
+            _add(self.regex_indian_passport, "PASSPORT", 11, 0.95, "DPDP")
+            _add(self.regex_indian_dl, "DRIVING_LICENSE", 11, 0.94, "DPDP")
+            _add(self.regex_emp_id, "EMPLOYEE_ID", 11, 0.93, "DPDP")
+            _add(self.regex_salary, "SALARY", 10, 0.92, "DPDP")
+            _add(self.regex_student_id, "STUDENT_ID", 11, 0.92, "DPDP")
+            _add(self.regex_age_gender, "AGE_GENDER", 3, 0.90, "DPDP")
+            _add(self.regex_gps, "GEO_DATA", 2, 0.95, "DPDP")
+            _add(self.regex_ifsc, "ACCOUNT_NUMBER", 10, 0.92, "DPDP")
+
+        # Optional Presidio NLP
         if self.presidio_analyzer:
             try:
                 results = self.presidio_analyzer.analyze(
@@ -273,7 +353,8 @@ class PIIDetector:
                             start=res.start,
                             end=res.end,
                             text=text[res.start:res.end],
-                            confidence=res.score
+                            confidence=res.score,
+                            framework="SHARED"
                         ))
                     elif res.entity_type in ["LOCATION", "GPE"]:
                         matches.append(PIIMatch(
@@ -283,7 +364,8 @@ class PIIDetector:
                             start=res.start,
                             end=res.end,
                             text=text[res.start:res.end],
-                            confidence=res.score
+                            confidence=res.score,
+                            framework="SHARED"
                         ))
             except Exception:
                 pass

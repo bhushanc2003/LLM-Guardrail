@@ -48,12 +48,14 @@ class PIIAnonymizer:
         self,
         text: str,
         vault: PIISessionVault,
-        mode: str = "REDACT"
+        mode: str = "REDACT",
+        check_hipaa: bool = True,
+        check_dpdp: bool = True
     ) -> Tuple[str, List[PIIMatch]]:
         """
         Process text, replace detected PII based on mode, and return anonymized text + list of matches.
         """
-        matches = self.detector.detect(text)
+        matches = self.detector.detect(text, check_hipaa=check_hipaa, check_dpdp=check_dpdp)
         if not matches:
             return text, []
 
@@ -83,7 +85,9 @@ class PIIAnonymizer:
         self,
         messages: List[Dict[str, Any]],
         vault: PIISessionVault,
-        mode: str = "ANONYMIZE"
+        mode: str = "ANONYMIZE",
+        check_hipaa: bool = True,
+        check_dpdp: bool = True
     ) -> Tuple[List[Dict[str, Any]], List[PIIMatch]]:
         """
         Process a list of OpenAI format messages (system, user, assistant).
@@ -96,7 +100,7 @@ class PIIAnonymizer:
             content = new_msg.get("content")
 
             if isinstance(content, str) and content:
-                anon_text, matches = self.process_text(content, vault, mode=mode)
+                anon_text, matches = self.process_text(content, vault, mode=mode, check_hipaa=check_hipaa, check_dpdp=check_dpdp)
                 new_msg["content"] = anon_text
                 all_matches.extend(matches)
             elif isinstance(content, list):
@@ -105,7 +109,7 @@ class PIIAnonymizer:
                 for item in content:
                     if isinstance(item, dict) and item.get("type") == "text":
                         sub_text = item.get("text", "")
-                        anon_text, matches = self.process_text(sub_text, vault, mode=mode)
+                        anon_text, matches = self.process_text(sub_text, vault, mode=mode, check_hipaa=check_hipaa, check_dpdp=check_dpdp)
                         item_copy = dict(item)
                         item_copy["text"] = anon_text
                         new_content_list.append(item_copy)

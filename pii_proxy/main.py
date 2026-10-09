@@ -58,6 +58,8 @@ class TestInspectRequest(BaseModel):
     prompt: str
     mode: Optional[str] = "REDACT"
     user_id: Optional[str] = "user_demo"
+    check_hipaa: Optional[bool] = None
+    check_dpdp: Optional[bool] = None
 
 class UserSyncRequest(BaseModel):
     clerk_user_id: str
@@ -122,6 +124,8 @@ async def get_me(user: DBUser = Depends(get_current_user)):
         "user_uuid": user.user_uuid,
         "role": user.role,
         "action_mode": user.action_mode,
+        "hipaa_enabled": user.hipaa_enabled if user.hipaa_enabled is not None else True,
+        "dpdp_enabled": user.dpdp_enabled if user.dpdp_enabled is not None else True,
     }
 
 def _sessions_summary(db, user_uuid: Optional[str] = None, limit: int = 50) -> List[Dict[str, Any]]:
@@ -350,6 +354,49 @@ async def set_user_action_mode(user_uuid: str, req: UserActionModeRequest, user:
         target.action_mode = mode
         db.commit()
         return {"user_uuid": user_uuid, "action_mode": mode or config.PII_ACTION_MODE, "is_default": mode is None}
+    finally:
+        db.close()
+
+class UserComplianceRequest(BaseModel):
+    hipaa_enabled: Optional[bool] = None
+    dpdp_enabled: Optional[bool] = None
+
+@app.get("/api/users/{user_uuid}/compliance")
+async def get_user_compliance(user_uuid: str, user: DBUser = Depends(get_current_user)):
+    """Fetch active compliance frameworks (HIPAA / DPDP) for user."""
+    assert_owner_or_admin(user, user_uuid)
+    db = SessionLocal()
+    try:
+        target = db.query(DBUser).filter(DBUser.user_uuid == user_uuid).first()
+        if target is None:
+            raise HTTPException(status_code=404, detail="user not found")
+        return {
+            "user_uuid": user_uuid,
+            "hipaa_enabled": target.hipaa_enabled if target.hipaa_enabled is not None else True,
+            "dpdp_enabled": target.dpdp_enabled if target.dpdp_enabled is not None else True,
+        }
+    finally:
+        db.close()
+
+@app.put("/api/users/{user_uuid}/compliance")
+async def set_user_compliance(user_uuid: str, req: UserComplianceRequest, user: DBUser = Depends(get_current_user)):
+    """Update active compliance frameworks (HIPAA / DPDP) for user."""
+    assert_owner_or_admin(user, user_uuid)
+    db = SessionLocal()
+    try:
+        target = db.query(DBUser).filter(DBUser.user_uuid == user_uuid).first()
+        if target is None:
+            raise HTTPException(status_code=404, detail="user not found")
+        if req.hipaa_enabled is not None:
+            target.hipaa_enabled = req.hipaa_enabled
+        if req.dpdp_enabled is not None:
+            target.dpdp_enabled = req.dpdp_enabled
+        db.commit()
+        return {
+            "user_uuid": user_uuid,
+            "hipaa_enabled": target.hipaa_enabled if target.hipaa_enabled is not None else True,
+            "dpdp_enabled": target.dpdp_enabled if target.dpdp_enabled is not None else True,
+        }
     finally:
         db.close()
 
@@ -769,13 +816,15 @@ async def test_inspect(req: TestInspectRequest, request: Request, user: DBUser =
     vault = PIISessionVault()
     start_time = time.time()
     mode = req.mode if (req.mode and req.mode != "DEFAULT") else _action_mode_for(request, user.user_uuid)
+    check_hipaa = req.check_hipaa if req.check_hipaa is not None else (user.hipaa_enabled if user.hipaa_enabled is not None else True)
+    check_dpdp = req.check_dpdp if req.check_dpdp is not None else (user.dpdp_enabled if user.dpdp_enabled is not None else True)
 
     try:
-        anon_text, matches = anonymizer.process_text(req.prompt, vault, mode=mode)
+        anon_text, matches = anonymizer.process_text(req.prompt, vault, mode=mode, check_hipaa=check_hipaa, check_dpdp=check_dpdp)
     except ValueError as e:
         latency_ms = (time.time() - start_time) * 1000.0
         # Detect matches for logging blocked attempt
-        matches = detector.detect(req.prompt)
+        matches = detector.detect(req.prompt, check_hipaa=check_hipaa, check_dpdp=check_dpdp)
         audit_logger.log_event(
             identity=identity_from_request(request, user.user_uuid),
             user_id=req.user_id,
@@ -983,12 +1032,33 @@ async def chat_completions(request: Request, user_uuid: Optional[str] = "default
     messages = req_body.get("messages", [])
     vault = PIISessionVault()
 
+    # Determine active compliance frameworks (HIPAA / DPDP)
+    db = SessionLocal()
+    check_hipaa = True
+    check_dpdp = True
+    try:
+        user_record = db.query(DBUser).filter(DBUser.user_uuid == user_uuid).first()
+        if user_record:
+            if user_record.hipaa_enabled is not None:
+                check_hipaa = user_record.hipaa_enabled
+            if user_record.dpdp_enabled is not None:
+                check_dpdp = user_record.dpdp_enabled
+    finally:
+        db.close()
+
+    if "X-Check-HIPAA" in request.headers:
+        check_hipaa = request.headers.get("X-Check-HIPAA", "").lower() in ("true", "1", "yes")
+    if "X-Check-DPDP" in request.headers:
+        check_dpdp = request.headers.get("X-Check-DPDP", "").lower() in ("true", "1", "yes")
+
     # Apply PII Anonymization / Compliance Policy on prompt messages
     try:
         processed_messages, matches = anonymizer.process_messages(
             messages=messages,
             vault=vault,
-            mode=action_mode
+            mode=action_mode,
+            check_hipaa=check_hipaa,
+            check_dpdp=check_dpdp
         )
     except ValueError as e:
         latency_ms = (time.time() - start_time) * 1000.0
@@ -997,7 +1067,7 @@ async def chat_completions(request: Request, user_uuid: Optional[str] = "default
             if isinstance(messages[idx], dict) and messages[idx].get("role") == "user":
                 latest_user_msg = str(messages[idx].get("content", ""))
                 break
-        blocked_matches = detector.detect(latest_user_msg) if latest_user_msg else []
+        blocked_matches = detector.detect(latest_user_msg, check_hipaa=check_hipaa, check_dpdp=check_dpdp) if latest_user_msg else []
         blocked_event_id = audit_logger.log_event(
             identity=identity_from_request(request, user_uuid, req_body.get("messages")),
             user_id=user_id,
