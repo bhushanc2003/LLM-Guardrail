@@ -998,9 +998,9 @@ export function UserView({ authedFetch, user, onOpenEvent }) {
                 checked={hipaa}
                 onChange={next => saveCompliance(next, dpdp)}
                 label="HIPAA Compliance (US PHI)"
-                description="Enforces 18 Safe Harbor medical & patient identifiers (MRN, health plan, clinical dates, SSN...)"
+                description="Enforces 15 Safe Harbor medical & patient identifiers (MRN, health plan, clinical dates, SSN...)"
                 icon="🏥"
-                infoBadge="18 Identifiers ↗"
+                infoBadge="15 Identifiers ↗"
                 onInfo={() => setActiveModal('hipaa')}
               />
               <ToggleSwitch
@@ -1167,9 +1167,9 @@ export function OverviewUser({ authedFetch, me, onOpenEvent }) {
                 checked={hipaa}
                 onChange={next => saveCompliance(next, dpdp)}
                 label="HIPAA Compliance (US PHI)"
-                description="Enforces 18 Safe Harbor medical & patient identifiers (MRN, health plan, clinical dates, SSN...)"
+                description="Enforces 15 Safe Harbor medical & patient identifiers (MRN, health plan, clinical dates, SSN...)"
                 icon="🏥"
-                infoBadge="18 Identifiers ↗"
+                infoBadge="15 Identifiers ↗"
                 onInfo={() => setActiveModal('hipaa')}
               />
               <ToggleSwitch

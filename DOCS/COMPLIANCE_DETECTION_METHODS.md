@@ -18,7 +18,7 @@ The system uses a **multi-tiered, hybrid detection architecture**:
 │                      FRAMEWORK ROUTER (User Compliance Settings)                         │
 │                                                                                          │
 │   • Shared PII: Always evaluated (Email, Phone, IP, Credit Cards, MAC, Basic Dates)      │
-│   • HIPAA Toggle: Evaluates 18 Safe Harbor PHI rules (SSN, MRN, Health Plan, Clinical)  │
+│   • HIPAA Toggle: Evaluates 15 Safe Harbor PHI rules (SSN, MRN, Health Plan, Clinical)  │
 │   • DPDP Toggle:  Evaluates 27 Indian Personal Identifiers (Aadhaar, PAN, UPI, PIN, etc) │
 └────────────┬───────────────────────────────┬──────────────────────────────┬──────────────┘
              │                               │                              │
@@ -73,30 +73,27 @@ The system uses a **multi-tiered, hybrid detection architecture**:
 
 ---
 
-## 1. HIPAA Safe Harbor (18 Protected Health Information Categories)
+## 1. HIPAA Safe Harbor (15 Protected Health Information Categories)
 
-The Health Insurance Portability and Accountability Act (HIPAA) Privacy Rule (§ 164.514) defines 18 individual identifiers that constitute Protected Health Information (PHI).
+The Health Insurance Portability and Accountability Act (HIPAA) Privacy Rule (§ 164.514) defines individual identifiers that constitute Protected Health Information (PHI). The 15 covered categories include:
 
 | # | HIPAA Identifier Field | Category ID & Name | Detection Method | Underlying Pattern / Algorithm | Confidence |
 |---|------------------------|--------------------|------------------|--------------------------------|:----------:|
-| **1** | **Names** (Patient, Relatives, Employers) | `1: Names` | Contextual Heuristics + Presidio NLP | Context title prefixes: `(?i:Dr.\|Mr.\|Mrs.\|Ms.\|Patient\|Doctor)\s+([A-Z][a-z]+(?:\s+[A-Z]\.?)?\s+[A-Z][a-z]+)` + Presidio `PERSON` entity | `0.91` |
-| **2** | **Geographic Subdivisions** (Street, City, County, Zip Code) | `2: Geographical Data` | Regex Grammar + Prefix Matching | Standard street types: `\b\d{1,5}\s+[\w\s.,#-]+?\s+(Street\|St\|Avenue\|Ave\|Road\|Rd\|Boulevard\|Blvd\|Drive\|Lane\|Court\|Way)\b`<br>US ZIP: `(?:\bZIP[:\s]+)?\d{5}(?:-\d{4})?\b` | `0.95` |
-| **3** | **Dates** (Birth, Admission, Discharge, Death, Ages > 89) | `3: Dates (Individual)` | Contextual Heuristics + ISO/Slash Date Regex | Clinical events: `(?i:Admitted\|Admission\|Discharged\|Died\|Surgery Date)[:\s]+(?:\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\|\d{4}[/-]\d{1,2}[/-]\d{1,2})`<br>DOB: `(?i:DOB\|Birth\|Born)[:\s]+...` | `0.94` |
-| **4** | **Telephone Numbers** | `4: Telephone Numbers` | E.164 & NANP Regex Parser | NANP phone: `(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b`<br>Prefix keyword phone: `(?i:Phone\|Tel\|Cell)[:\s]+...` | `0.90` |
-| **5** | **Fax Numbers** | `5: Fax Numbers` | Keyword-Anchored Regex | `(?i:Fax)[:#\s]+(?:\+?\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b` | `0.95` |
-| **6** | **Email Addresses** | `6: Email Addresses` | RFC 5322 Compliant Regex | `\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b` | `0.99` |
-| **7** | **Social Security Numbers (SSN)** | `7: Social Security Numbers (SSN)` | Deterministic Format Regex | 9-digit format: `\b\d{3}-\d{2}-\d{4}\b`<br>Keyword match: `(?i:SSN\|Social Security)[:#\s]+\d{3}[-\s]?\d{2}[-\s]?\d{4}\b` | `0.98` |
-| **8** | **Medical Record Numbers (MRN)** | `8: Medical Record Numbers (MRN)` | Healthcare Context Regex | Format: `(?i:MRN\|Medical Record Number\|Med Rec #)[:#\s]+[A-Za-z0-9-]{6,12}\b` and `\bMRN-\d{6,10}\b` | `0.96` |
-| **9** | **Health Plan Beneficiary Numbers** | `9: Health Plan Beneficiary Numbers` | Insurance Policy Context Matcher | `(?i:Health Plan\|Beneficiary ID\|Policy #\|Member ID\|HICN\|Medicare ID)[:#\s]+[A-Za-z0-9-]{7,15}\b` | `0.95` |
-| **10** | **Account Numbers** (Bank / Billing) | `10: Account Numbers` | Keyword-Bounded Regex | `(?i:Account #\|Acct #\|Bank Account\|IBAN)[:#\s]+[A-Za-z0-9-]{8,22}\b` | `0.95` |
-| **11** | **Certificate & License Numbers** | `11: Certificate/License Numbers` | State & Medical License Pattern | `(?i:Driver'?s License\|DL #\|License #\|Cert #\|Certificate #)[:#\s]+[A-Za-z0-9-]{6,16}\b` | `0.94` |
-| **12** | **Vehicle Identifiers (VIN & License Plates)** | `12: Vehicle Identifiers` | ISO 3779 VIN + License Plate Grammar | VIN (excluding I, O, Q): `\b[A-HJ-NPR-Z0-9]{17}\b`<br>Plate: `(?i:License Plate\|Plate #)[:#\s]+[A-Z0-9-]{3,8}\b` | `0.95` |
-| **13** | **Device Identifiers & Serial Numbers** | `13: Device Identifiers` | Hardware Identifier Regex | `(?i:Serial Number\|Serial #\|IMEI\|Device ID)[:#\s]+[A-Za-z0-9-]{8,20}\b` | `0.93` |
-| **14** | **Web Universal Resource Locators (URLs)** | `14: Web URLs` | URI Scheme Grammar | `\bhttps?://[^\s<>"{}|\\^`]+` and `\bwww\.[a-zA-Z0-9-]+\.[a-zA-Z]{2,}` | `0.98` |
-| **15** | **Internet Protocol (IP) Addresses** | `15: IP Addresses` | Octet-bounded IPv4 & IPv6 Regex | IPv4: `\b(?:(?:25[0-5]\|2[0-4][0-9]\|[01]?[0-9][0-9]?)\.){3}(?:...)\b`<br>IPv6: standard 128-bit hex format | `0.99` |
-| **16** | **Biometric Identifiers** (Finger, Voice) | `8: Medical Record Numbers` / Context | Contextual Clinical Keyword Matcher | `(?i:Biometric\|Fingerprint ID\|Retinal Scan)[:#\s]+[A-Za-z0-9-]+` | `0.90` |
-| **17** | **Full Face Photos & Comparable Images** | `13: Device Identifiers` / Meta | Multimodal Attachment / File URI Matcher | Evaluates media attachments and image references (`.png`, `.jpg`, `.dcm` DICOM tags) | `0.92` |
-| **18** | **Any Unique Identifying Number / Code** | `8: Medical Record Numbers` | Patient ID Regex | `\b(?i:patient\s+id\|patient\s+#)[:#\s]+[A-Za-z0-9-]{5,12}\b` | `0.90` |
+| **1** | **Names** (including initials or family/employer names) | `1: Names` | Contextual Heuristics + Presidio NLP | Context title prefixes: `(?i:Dr.\|Mr.\|Mrs.\|Ms.\|Patient\|Doctor)\s+([A-Z][a-z]+(?:\s+[A-Z]\.?)?\s+[A-Z][a-z]+)` + Presidio `PERSON` entity | `0.91` |
+| **2** | **Geographical data smaller than a state** (street address, city, county, ZIP code) | `2: Geographical Data` | Regex Grammar + Prefix Matching | Standard street types: `\b\d{1,5}\s+[\w\s.,#-]+?\s+(Street\|St\|Avenue\|Ave\|Road\|Rd\|Boulevard\|Blvd\|Drive\|Lane\|Court\|Way)\b`<br>US ZIP: `(?:\bZIP[:\s]+)?\d{5}(?:-\d{4})?\b` | `0.95` |
+| **3** | **Dates directly related to an individual** (birth, admission, discharge, death years alone are generally excluded) | `3: Dates (Individual)` | Contextual Heuristics + ISO/Slash Date Regex | Clinical events: `(?i:Admitted\|Admission\|Discharged\|Died\|Surgery Date)[:\s]+(?:\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\|\d{4}[/-]\d{1,2}[/-]\d{1,2})`<br>DOB: `(?i:DOB\|Birth\|Born)[:\s]+...` | `0.94` |
+| **4** | **Telephone numbers** | `4: Telephone Numbers` | E.164 & NANP Regex Parser | NANP phone: `(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b`<br>Prefix keyword phone: `(?i:Phone\|Tel\|Cell)[:\s]+...` | `0.90` |
+| **5** | **Fax numbers** | `5: Fax Numbers` | Keyword-Anchored Regex | `(?i:Fax)[:#\s]+(?:\+?\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b` | `0.95` |
+| **6** | **Email addresses** | `6: Email Addresses` | RFC 5322 Compliant Regex | `\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b` | `0.99` |
+| **7** | **Social Security numbers (SSN)** | `7: Social Security Numbers (SSN)` | Deterministic Format Regex | 9-digit format: `\b\d{3}-\d{2}-\d{4}\b`<br>Keyword match: `(?i:SSN\|Social Security)[:#\s]+\d{3}[-\s]?\d{2}[-\s]?\d{4}\b` | `0.98` |
+| **8** | **Medical record numbers (MRN)** | `8: Medical Record Numbers (MRN)` | Healthcare Context Regex | Format: `(?i:MRN\|Medical Record Number\|Med Rec #)[:#\s]+[A-Za-z0-9-]{6,12}\b` and `\bMRN-\d{6,10}\b` | `0.96` |
+| **9** | **Health plan beneficiary numbers** | `9: Health Plan Beneficiary Numbers` | Insurance Policy Context Matcher | `(?i:Health Plan\|Beneficiary ID\|Policy #\|Member ID\|HICN\|Medicare ID)[:#\s]+[A-Za-z0-9-]{7,15}\b` | `0.95` |
+| **10** | **Account numbers** | `10: Account Numbers` | Keyword-Bounded Regex | `(?i:Account #\|Acct #\|Bank Account\|IBAN)[:#\s]+[A-Za-z0-9-]{8,22}\b` | `0.95` |
+| **11** | **Certificate/license numbers** | `11: Certificate/License Numbers` | State & Medical License Pattern | `(?i:Driver'?s License\|DL #\|License #\|Cert #\|Certificate #)[:#\s]+[A-Za-z0-9-]{6,16}\b` | `0.94` |
+| **12** | **Vehicle identifiers and serial numbers (including license plates)** | `12: Vehicle Identifiers` | ISO 3779 VIN + License Plate Grammar | VIN (excluding I, O, Q): `\b[A-HJ-NPR-Z0-9]{17}\b`<br>Plate: `(?i:License Plate\|Plate #)[:#\s]+[A-Z0-9-]{3,8}\b` | `0.95` |
+| **13** | **Device identifiers and serial numbers** | `13: Device Identifiers` | Hardware Identifier Regex | `(?i:Serial Number\|Serial #\|IMEI\|Device ID)[:#\s]+[A-Za-z0-9-]{8,20}\b` | `0.93` |
+| **14** | **Web URLs** | `14: Web URLs` | URI Scheme Grammar | `\bhttps?://[^\s<>"{}|\\^`]+` and `\bwww\.[a-zA-Z0-9-]+\.[a-zA-Z]{2,}` | `0.98` |
+| **15** | **IP address numbers** | `15: IP Addresses` | Octet-bounded IPv4 & IPv6 Regex | IPv4: `\b(?:(?:25[0-5]\|2[0-4][0-9]\|[01]?[0-9][0-9]?)\.){3}(?:...)\b`<br>IPv6: standard 128-bit hex format | `0.99` |
 
 ---
 
