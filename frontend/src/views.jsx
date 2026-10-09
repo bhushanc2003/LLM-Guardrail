@@ -1131,7 +1131,7 @@ export function OverviewAdmin({ authedFetch, onOpenEvent, onOpenUser }) {
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.6fr) minmax(0, 1fr)', gap: '18px', alignItems: 'start' }}>
-        <Card title="Needs attention" action={<span style={{ color: C.faint, fontSize: '0.82rem' }}>latest violations, all users</span>}>
+        <Card title="Needs Attention" action={<span style={{ color: C.faint, fontSize: '0.82rem' }}>latest violations, all users</span>}>
           {attention.length === 0 ? <Empty>No violations yet.</Empty> : (
             <div style={{ display: 'grid', gap: '2px' }}>
               {attention.map(v => (
@@ -1431,7 +1431,7 @@ export function TrustAnalyticsView({ authedFetch, me, isAdmin, initialUuid }) {
         .then(u => {
           if (Array.isArray(u)) setUsers(u);
         })
-        .catch(() => {});
+        .catch(() => { });
     }
   }, [isAdmin, authedFetch]);
 

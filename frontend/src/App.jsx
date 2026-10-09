@@ -1,24 +1,15 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { ClerkProvider, SignedIn, SignedOut, SignInButton, SignUpButton, UserButton, useAuth, useUser } from '@clerk/clerk-react';
 import Shell from './Shell.jsx';
-import { Loader3D, C, mono, IconShield, IconUser } from './ui.jsx';
+import { Loader3D, C, mono, IconShield, IconUser, AdrishyaLogo } from './ui.jsx';
 import { OverviewAdmin, OverviewUser, LogsView, SessionsView, UsersView, UserView, TestView, TrustAnalyticsView, AdminActivityUserList, Segmented } from './views.jsx';
 
 const CLERK_PUBLISHABLE_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY || "pk_test_ZHJpdmVuLWNsYW0tOTMwNi5jbGVyay5hY2NvdW50cy5kZXYk";
 
-// High-Tech Cyber & DevSecOps SVG Micro-Icons
+// High-Tech Cyber & DevSecOps SVG Micro-Icons (All standardized with checkmark shield logo)
 const Icons = {
-  Shield: ({ size = 22, color = '#00f2fe', style = {} }) => (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style={style}>
-      <path d="M12 2L3 6V11.5C3 17.5 7 21.5 12 23C17 21.5 21 17.5 21 11.5V6L12 2Z" fill="url(#shield-grad)" stroke={color} strokeWidth="1.5" strokeLinejoin="round" />
-      <path d="M12 7V17M8.5 11L12 7L15.5 11" stroke="#fff" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-      <defs>
-        <linearGradient id="shield-grad" x1="3" y1="2" x2="21" y2="23" gradientUnits="userSpaceOnUse">
-          <stop stopColor="#00f2fe" stopOpacity="0.25" />
-          <stop offset="1" stopColor="#8b5cf6" stopOpacity="0.45" />
-        </linearGradient>
-      </defs>
-    </svg>
+  Shield: ({ size = 22, color = 'currentColor', strokeWidth = 2.2, style = {} }) => (
+    <IconShield size={size} color={color} strokeWidth={strokeWidth} style={style} />
   ),
   Lock: ({ size = 18, color = '#10b981', style = {} }) => (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={style}>
@@ -48,7 +39,7 @@ const Icons = {
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={style}>
       <circle cx="12" cy="12" r="10" />
       <line x1="2" y1="12" x2="22" y2="12" />
-      <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+      <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1 4-10z" />
     </svg>
   ),
   EyeScan: ({ size = 22, color = '#a855f7', style = {} }) => (
@@ -102,6 +93,74 @@ const Icons = {
     </svg>
   ),
 };
+
+// 3D Isometric Wireframe Cube Component with White Lines
+function WireframeCube({ size = 80, x = '10%', y = '20%', rotSpeed = '16s', delay = '0s', opacity = 0.85 }) {
+  const half = size / 2;
+  return (
+    <div style={{
+      position: 'absolute',
+      left: x,
+      top: y,
+      width: `${size}px`,
+      height: `${size}px`,
+      perspective: '1000px',
+      transformStyle: 'preserve-3d',
+      pointerEvents: 'none',
+      opacity,
+      animation: `floatCube ${rotSpeed} ease-in-out infinite alternate ${delay}`,
+    }}>
+      <div style={{
+        width: '100%',
+        height: '100%',
+        position: 'relative',
+        transformStyle: 'preserve-3d',
+        animation: `spin3dCube ${rotSpeed} linear infinite ${delay}`,
+      }}>
+        {/* 6 Faces with White Lines Borders and Cyber Highlights */}
+        {[
+          { transform: `translateZ(${half}px)` },
+          { transform: `rotateY(180deg) translateZ(${half}px)` },
+          { transform: `rotateY(90deg) translateZ(${half}px)` },
+          { transform: `rotateY(-90deg) translateZ(${half}px)` },
+          { transform: `rotateX(90deg) translateZ(${half}px)` },
+          { transform: `rotateX(-90deg) translateZ(${half}px)` },
+        ].map((face, i) => (
+          <div
+            key={i}
+            style={{
+              position: 'absolute',
+              inset: 0,
+              border: '1.5px solid rgba(255, 255, 255, 0.45)',
+              background: 'linear-gradient(135deg, rgba(0, 242, 254, 0.08) 0%, rgba(168, 85, 247, 0.04) 100%)',
+              boxShadow: 'inset 0 0 18px rgba(0, 242, 254, 0.15)',
+              backdropFilter: 'blur(4px)',
+              ...face,
+            }}
+          >
+            {/* Inner Diagonal White Cross-Lines */}
+            <div style={{
+              position: 'absolute',
+              inset: '6px',
+              border: '1px dashed rgba(255, 255, 255, 0.22)',
+            }} />
+            <div style={{
+              position: 'absolute',
+              top: '50%',
+              left: '50%',
+              width: '6px',
+              height: '6px',
+              borderRadius: '50%',
+              background: '#00f2fe',
+              transform: 'translate(-50%, -50%)',
+              boxShadow: '0 0 8px #00f2fe',
+            }} />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 function LandingPage() {
   const [activeTab, setActiveTab] = useState('healthcare');
@@ -167,59 +226,101 @@ function LandingPage() {
   };
 
   return (
-    <div style={{ background: '#040711', minHeight: '100vh', color: '#f8fafc', fontFamily: "'Outfit', system-ui, sans-serif", position: 'relative', overflowX: 'hidden' }}>
+    <div style={{ background: '#030712', minHeight: '100vh', color: '#f8fafc', fontFamily: "'Outfit', system-ui, sans-serif", position: 'relative', overflowX: 'hidden' }}>
       <style>{`
-        @keyframes float3d {
-          0%, 100% { transform: translateY(0px) rotateX(2deg) rotateY(-2deg); }
-          50% { transform: translateY(-10px) rotateX(-2deg) rotateY(2deg); }
+        @keyframes floatCube {
+          0% { transform: translateY(0px) rotateX(15deg) rotateY(10deg); }
+          50% { transform: translateY(-24px) rotateX(-10deg) rotateY(-15deg); }
+          100% { transform: translateY(0px) rotateX(15deg) rotateY(10deg); }
+        }
+        @keyframes spin3dCube {
+          0% { transform: rotateX(0deg) rotateY(0deg) rotateZ(0deg); }
+          100% { transform: rotateX(360deg) rotateY(360deg) rotateZ(360deg); }
+        }
+        @keyframes gridTravelFloor {
+          0% { background-position: 0 0; }
+          100% { background-position: 0 50px; }
         }
         @keyframes pulseGlow {
-          0%, 100% { opacity: 0.35; transform: scale(1); }
-          50% { opacity: 0.7; transform: scale(1.08); }
+          0%, 100% { opacity: 0.45; transform: scale(1); }
+          50% { opacity: 0.85; transform: scale(1.1); }
         }
         @keyframes gradientShift {
           0% { background-position: 0% 50%; }
           50% { background-position: 100% 50%; }
           100% { background-position: 0% 50%; }
         }
+        @keyframes scanBeamMove {
+          0% { top: -10%; opacity: 0; }
+          20% { opacity: 0.8; }
+          80% { opacity: 0.8; }
+          100% { top: 110%; opacity: 0; }
+        }
         .glow-hover:hover {
           transform: translateY(-4px) scale(1.01);
           box-shadow: 0 20px 40px -15px rgba(0, 242, 254, 0.35), 0 0 30px rgba(168, 85, 247, 0.2);
-          border-color: rgba(0, 242, 254, 0.45) !important;
+          border-color: rgba(0, 242, 254, 0.55) !important;
         }
         .btn-3d-primary {
           background: linear-gradient(135deg, #00f2fe 0%, #4f46e5 50%, #9333ea 100%);
           background-size: 200% 200%;
           animation: gradientShift 4s ease infinite;
-          box-shadow: 0 10px 25px -5px rgba(0, 242, 254, 0.4), inset 0 1px 1px rgba(255, 255, 255, 0.4);
+          box-shadow: 0 10px 25px -5px rgba(0, 242, 254, 0.5), inset 0 1px 2px rgba(255, 255, 255, 0.6);
           transition: all 0.25s ease;
         }
         .btn-3d-primary:hover {
           transform: translateY(-2px);
-          box-shadow: 0 15px 35px -5px rgba(0, 242, 254, 0.6), inset 0 1px 2px rgba(255, 255, 255, 0.6);
+          box-shadow: 0 15px 35px -5px rgba(0, 242, 254, 0.75), inset 0 1px 3px rgba(255, 255, 255, 0.8);
         }
       `}</style>
 
-      {/* 3D Background Lighting & Ambient Cyber Grid */}
-      <div style={{ position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 0 }}>
-        {/* Animated Neon Radial Orbs */}
-        <div style={{ position: 'absolute', top: '-10%', left: '15%', width: '600px', height: '600px', borderRadius: '50%', background: 'radial-gradient(circle, rgba(0, 242, 254, 0.15) 0%, rgba(79, 70, 229, 0.08) 40%, transparent 70%)', filter: 'blur(60px)', animation: 'pulseGlow 8s ease-in-out infinite' }} />
-        <div style={{ position: 'absolute', top: '25%', right: '-5%', width: '650px', height: '650px', borderRadius: '50%', background: 'radial-gradient(circle, rgba(168, 85, 247, 0.16) 0%, rgba(236, 72, 153, 0.06) 40%, transparent 70%)', filter: 'blur(70px)', animation: 'pulseGlow 10s ease-in-out infinite 2s' }} />
-        <div style={{ position: 'absolute', bottom: '5%', left: '20%', width: '700px', height: '700px', borderRadius: '50%', background: 'radial-gradient(circle, rgba(16, 185, 129, 0.1) 0%, rgba(0, 242, 254, 0.05) 50%, transparent 70%)', filter: 'blur(80px)' }} />
+      {/* 3D Deep Cyber Matrix Background with White Lines Grid Blocks */}
+      <div style={{ position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 0, overflow: 'hidden' }}>
 
-        {/* Perspective Cyber Grid Floor */}
+        {/* Animated Neon Volumetric Ambient Light Pods */}
+        <div style={{ position: 'absolute', top: '-15%', left: '10%', width: '700px', height: '700px', borderRadius: '50%', background: 'radial-gradient(circle, rgba(0, 242, 254, 0.22) 0%, rgba(79, 70, 229, 0.12) 40%, transparent 70%)', filter: 'blur(70px)', animation: 'pulseGlow 8s ease-in-out infinite' }} />
+        <div style={{ position: 'absolute', top: '30%', right: '-8%', width: '750px', height: '750px', borderRadius: '50%', background: 'radial-gradient(circle, rgba(168, 85, 247, 0.22) 0%, rgba(236, 72, 153, 0.08) 40%, transparent 70%)', filter: 'blur(80px)', animation: 'pulseGlow 10s ease-in-out infinite 2s' }} />
+        <div style={{ position: 'absolute', bottom: '0%', left: '25%', width: '800px', height: '800px', borderRadius: '50%', background: 'radial-gradient(circle, rgba(16, 185, 129, 0.15) 0%, rgba(0, 242, 254, 0.08) 50%, transparent 70%)', filter: 'blur(90px)' }} />
+
+        {/* Global 3D White Lines Perspective Floor Grid */}
         <div style={{
           position: 'absolute',
           bottom: 0,
+          left: '-20%',
+          right: '-20%',
+          height: '600px',
+          backgroundImage: `
+            linear-gradient(rgba(255, 255, 255, 0.18) 1.5px, transparent 1.5px),
+            linear-gradient(90deg, rgba(255, 255, 255, 0.18) 1.5px, transparent 1.5px),
+            linear-gradient(rgba(0, 242, 254, 0.28) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(0, 242, 254, 0.28) 1px, transparent 1px)
+          `,
+          backgroundSize: '50px 50px, 50px 50px, 10px 10px, 10px 10px',
+          transform: 'perspective(600px) rotateX(68deg)',
+          transformOrigin: 'bottom center',
+          animation: 'gridTravelFloor 3s linear infinite',
+          maskImage: 'linear-gradient(to top, rgba(0,0,0,1) 15%, rgba(0,0,0,0.85) 60%, transparent 100%)',
+          WebkitMaskImage: 'linear-gradient(to top, rgba(0,0,0,1) 15%, rgba(0,0,0,0.85) 60%, transparent 100%)',
+        }} />
+
+
+
+        {/* Floating 3D Isometric Wireframe Cyber Cubes (White Lines Blocks) */}
+        <WireframeCube size={90} x="8%" y="15%" rotSpeed="18s" delay="0s" opacity={0.75} />
+        <WireframeCube size={120} x="82%" y="12%" rotSpeed="22s" delay="2s" opacity={0.8} />
+        <WireframeCube size={75} x="4%" y="55%" rotSpeed="15s" delay="1s" opacity={0.65} />
+        <WireframeCube size={105} x="86%" y="62%" rotSpeed="20s" delay="3s" opacity={0.75} />
+        <WireframeCube size={60} x="48%" y="8%" rotSpeed="14s" delay="2.5s" opacity={0.5} />
+
+        {/* Downward Scanning Laser Beam */}
+        <div style={{
+          position: 'absolute',
           left: 0,
           right: 0,
-          height: '450px',
-          backgroundImage: 'linear-gradient(rgba(56, 189, 248, 0.07) 1px, transparent 1px), linear-gradient(90deg, rgba(56, 189, 248, 0.07) 1px, transparent 1px)',
-          backgroundSize: '50px 50px',
-          transform: 'perspective(500px) rotateX(60deg)',
-          transformOrigin: 'bottom center',
-          maskImage: 'linear-gradient(to top, rgba(0,0,0,1) 0%, transparent 90%)',
-          WebkitMaskImage: 'linear-gradient(to top, rgba(0,0,0,1) 0%, transparent 90%)',
+          height: '2px',
+          background: 'linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.9) 30%, rgba(0, 242, 254, 1) 50%, rgba(168, 85, 247, 0.9) 70%, transparent 100%)',
+          boxShadow: '0 0 20px rgba(0, 242, 254, 0.8), 0 0 40px rgba(168, 85, 247, 0.6)',
+          animation: 'scanBeamMove 7s cubic-bezier(0.4, 0, 0.2, 1) infinite',
         }} />
       </div>
 
@@ -230,56 +331,15 @@ function LandingPage() {
         zIndex: 100,
         backdropFilter: 'blur(20px)',
         WebkitBackdropFilter: 'blur(20px)',
-        backgroundColor: 'rgba(4, 7, 17, 0.75)',
-        borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+        backgroundColor: 'rgba(3, 7, 18, 0.82)',
+        borderBottom: '1px solid rgba(255, 255, 255, 0.12)',
         padding: '16px 24px',
+        boxShadow: '0 4px 30px rgba(0, 0, 0, 0.5)',
       }}>
         <div style={{ maxWidth: '1240px', margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
 
-          {/* Brand Logo with 3D Hologram Aura */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-            <div style={{
-              width: '46px',
-              height: '46px',
-              borderRadius: '14px',
-              background: 'linear-gradient(135deg, rgba(0, 242, 254, 0.2) 0%, rgba(139, 92, 246, 0.3) 100%)',
-              border: '1px solid rgba(0, 242, 254, 0.4)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              boxShadow: '0 8px 24px rgba(0, 242, 254, 0.25), inset 0 1px 1px rgba(255, 255, 255, 0.4)',
-              position: 'relative',
-            }}>
-              <Icons.Shield size={26} color="#00f2fe" />
-              <div style={{
-                position: 'absolute',
-                inset: '-3px',
-                borderRadius: '16px',
-                border: '1px solid rgba(0, 242, 254, 0.3)',
-                pointerEvents: 'none',
-              }} />
-            </div>
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <h1 style={{
-                  fontSize: '1.6rem',
-                  fontWeight: 800,
-                  margin: 0,
-                  letterSpacing: '-0.02em',
-                  background: 'linear-gradient(135deg, #ffffff 0%, #38bdf8 50%, #c084fc 100%)',
-                  WebkitBackgroundClip: 'text',
-                  WebkitTextFillColor: 'transparent',
-                }}>
-                  Adrishya
-                </h1>
-
-              </div>
-
-              <p style={{ fontSize: '0.78rem', color: '#94a3b8', margin: '2px 0 0 0', fontWeight: 500 }}>
-                The Invisible Privacy Layer
-              </p>
-            </div>
-          </div>
+          {/* Standardized Enterprise Brand Logo with checkmark shield */}
+          <AdrishyaLogo size="large" />
 
           {/* Quick Metrics & Actions */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
@@ -301,9 +361,9 @@ function LandingPage() {
 
             <SignInButton mode="modal">
               <button style={{
-                background: 'rgba(255, 255, 255, 0.04)',
+                background: 'rgba(255, 255, 255, 0.06)',
                 color: '#f8fafc',
-                border: '1px solid rgba(255, 255, 255, 0.18)',
+                border: '1px solid rgba(255, 255, 255, 0.2)',
                 padding: '9px 20px',
                 borderRadius: '10px',
                 cursor: 'pointer',
@@ -848,11 +908,11 @@ function LandingPage() {
         {/* Bottom 3D Call to Action Banner */}
         <section style={{
           background: 'linear-gradient(135deg, rgba(0, 242, 254, 0.1) 0%, rgba(168, 85, 247, 0.12) 50%, rgba(79, 70, 229, 0.1) 100%)',
-          border: '1px solid rgba(0, 242, 254, 0.3)',
+          border: '1px solid rgba(0, 242, 254, 0.35)',
           borderRadius: '24px',
           padding: '50px 32px',
           textAlign: 'center',
-          boxShadow: '0 20px 60px rgba(0, 0, 0, 0.5), inset 0 1px 1px rgba(255, 255, 255, 0.2)',
+          boxShadow: '0 20px 60px rgba(0, 0, 0, 0.6), 0 0 40px rgba(0, 242, 254, 0.15), inset 0 1px 1px rgba(255, 255, 255, 0.25)',
           position: 'relative',
         }}>
           <div style={{
@@ -860,13 +920,13 @@ function LandingPage() {
             height: '56px',
             margin: '0 auto 20px auto',
             borderRadius: '16px',
-            background: 'linear-gradient(135deg, #00f2fe, #7f00ff)',
+            background: 'linear-gradient(135deg, #00f2fe, #a855f7)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            boxShadow: '0 10px 30px rgba(0, 242, 254, 0.4)',
+            boxShadow: '0 0 25px rgba(0, 242, 254, 0.5), inset 0 1px 2px rgba(255, 255, 255, 0.5)',
           }}>
-            <Icons.Shield size={28} color="#fff" />
+            <IconShield size={30} color="#ffffff" strokeWidth={2.2} />
           </div>
           <h2 style={{
             fontSize: '2.4rem',
@@ -891,12 +951,12 @@ function LandingPage() {
               fontSize: '1.1rem',
               fontWeight: 800,
               cursor: 'pointer',
-              boxShadow: '0 10px 30px rgba(0, 242, 254, 0.4)',
+              boxShadow: '0 10px 30px rgba(0, 242, 254, 0.5)',
               display: 'inline-flex',
               alignItems: 'center',
               gap: '10px',
             }}>
-              <Icons.Shield size={18} color="#fff" />
+              <IconShield size={20} color="#fff" strokeWidth={2.2} />
               <span>Get Started Free · Sign Up Now</span>
             </button>
           </SignUpButton>
@@ -904,17 +964,16 @@ function LandingPage() {
 
         {/* Footer */}
         <footer style={{ marginTop: '80px', paddingTop: '24px', borderTop: '1px solid rgba(255, 255, 255, 0.08)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px', color: '#64748b', fontSize: '0.84rem' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span style={{ fontWeight: 700, color: '#f8fafc' }}>Adrishya (अदृश्य)</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <AdrishyaLogo size="small" showSubtitle={false} />
             <span>•</span>
-            <span>Zero-Trust Privacy Layer & Reverse Proxy for AI</span>
+            <span>Invisible Privacy Layer</span>
           </div>
           <div style={{ display: 'flex', gap: '18px' }}>
             <span>HIPAA Safe Harbor</span>
             <span>•</span>
             <span>DPDP Act 2023 India</span>
-            <span>•</span>
-            <span>SHA-256 Masking</span>
+
           </div>
         </footer>
 

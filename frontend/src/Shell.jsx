@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import {
   C,
+  AdrishyaLogo,
   IconShield,
   IconOverview,
   IconActivity,
@@ -100,43 +101,11 @@ export default function Shell({ items, active, onNav, title, subtitle, userButto
           gap: '8px',
           minHeight: '44px',
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <div
-              style={{
-                width: '38px',
-                height: '38px',
-                borderRadius: '10px',
-                background: 'linear-gradient(135deg, #00f2fe, #a855f7)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                boxShadow: '0 0 16px rgba(0, 242, 254, 0.4)',
-                flex: 'none',
-                cursor: 'pointer',
-              }}
-              onClick={toggle}
-              title={collapsed ? 'Click to expand sidebar' : 'PII Guardrail'}
-            >
-              <IconShield size={22} color="#ffffff" strokeWidth={2.2} />
-            </div>
-            {!collapsed && (
-              <div style={{ overflow: 'hidden', whiteSpace: 'nowrap' }}>
-                <div style={{
-                  fontWeight: 800,
-                  fontSize: '1.02rem',
-                  background: 'linear-gradient(135deg, #ffffff 20%, #00f2fe 65%, #a855f7 100%)',
-                  WebkitBackgroundClip: 'text',
-                  WebkitTextFillColor: 'transparent',
-                  letterSpacing: '0.02em',
-                }}>
-                  Adrishya
-                </div>
-                <div style={{ color: C.muted, fontSize: '0.72rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', marginTop: '2px' }}>
-                  Invisible Privacy Layer
-                </div>
-              </div>
-            )}
-          </div>
+          <AdrishyaLogo
+            collapsed={collapsed}
+            onClick={toggle}
+            style={{ cursor: 'pointer' }}
+          />
 
           {!collapsed && (
             <button

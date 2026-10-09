@@ -155,23 +155,164 @@ export function Loader({ text = 'Loading dataâ€¦' }) {
   );
 }
 
-export function Loader3D({ title = 'Initializing Governance Engine...', subtitle = 'Syncing session state' }) {
+export function Loader3D({ title = 'Adrishya', subtitle = 'Loading...' }) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', background: 'radial-gradient(circle at center, #0f172a 0%, #060913 75%)', textAlign: 'center', padding: '20px', fontFamily: "'Outfit', system-ui, sans-serif" }}>
-      <div style={{ position: 'relative', width: '120px', height: '120px', perspective: '1000px', transformStyle: 'preserve-3d', marginBottom: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <div style={{ position: 'absolute', width: '100px', height: '100px', borderRadius: '50%', background: 'radial-gradient(circle, rgba(0,242,254,0.3) 0%, rgba(168,85,247,0.15) 50%, transparent 70%)', filter: 'blur(12px)' }} />
-        <div style={{ position: 'absolute', width: '110px', height: '110px', borderRadius: '50%', border: '3px solid transparent', borderTop: '3px solid #00f2fe', borderBottom: '3px solid #00f2fe', boxShadow: '0 0 22px rgba(0, 242, 254, 0.45)', animation: 'spin3dX 3.5s linear infinite' }} />
-        <div style={{ position: 'absolute', width: '85px', height: '85px', borderRadius: '50%', border: '3px solid transparent', borderLeft: '3px solid #a855f7', borderRight: '3px solid #a855f7', boxShadow: '0 0 20px rgba(168, 85, 247, 0.45)', animation: 'spin3dY 2.8s linear infinite' }} />
-        <div style={{ position: 'absolute', width: '60px', height: '60px', borderRadius: '50%', border: '2.5px solid transparent', borderTop: '2.5px solid #38bdf8', borderRight: '2.5px solid #38bdf8', animation: 'spin3dX 2s linear infinite reverse' }} />
-        <div style={{ position: 'absolute', width: '22px', height: '22px', borderRadius: '50%', background: 'linear-gradient(135deg, #00f2fe, #a855f7)', animation: 'pulseCore 2.2s ease-in-out infinite' }} />
+    <div style={{
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      justifyContent: 'center',
+      minHeight: '100vh',
+      background: 'radial-gradient(ellipse at center, #0d1733 0%, #030712 75%)',
+      textAlign: 'center',
+      padding: '24px',
+      fontFamily: "'Outfit', system-ui, sans-serif",
+      position: 'relative',
+      overflow: 'hidden',
+    }}>
+      <style>{`
+        @keyframes loaderOrbit1 {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
+        }
+        @keyframes loaderOrbit3DX {
+          0% { transform: rotateX(65deg) rotateZ(0deg); }
+          100% { transform: rotateX(65deg) rotateZ(360deg); }
+        }
+        @keyframes loaderOrbit3DY {
+          0% { transform: rotateY(65deg) rotateZ(0deg); }
+          100% { transform: rotateY(65deg) rotateZ(-360deg); }
+        }
+        @keyframes loaderPulseCore {
+          0%, 100% { transform: scale(1); box-shadow: 0 0 16px rgba(0, 242, 254, 0.5); }
+          50% { transform: scale(1.1); box-shadow: 0 0 24px rgba(168, 85, 247, 0.7), 0 0 35px rgba(0, 242, 254, 0.4); }
+        }
+        @keyframes loaderPulseDot {
+          0%, 100% { opacity: 0.35; transform: scale(0.85); }
+          50% { opacity: 1; transform: scale(1.25); }
+        }
+      `}</style>
+
+      {/* 3D Multi-Layer Rotating Orbit Stage */}
+      <div style={{
+        position: 'relative',
+        width: '120px',
+        height: '120px',
+        perspective: '1000px',
+        transformStyle: 'preserve-3d',
+        marginBottom: '24px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}>
+        {/* Ambient Glow Aura */}
+        <div style={{
+          position: 'absolute',
+          width: '100px',
+          height: '100px',
+          borderRadius: '50%',
+          background: 'radial-gradient(circle, rgba(0, 242, 254, 0.3) 0%, rgba(168, 85, 247, 0.18) 50%, transparent 70%)',
+          filter: 'blur(14px)',
+        }} />
+
+        {/* Outer Continuous Rotating Gradient Arc */}
+        <div style={{
+          position: 'absolute',
+          width: '116px',
+          height: '116px',
+          borderRadius: '50%',
+          border: '2px solid transparent',
+          borderTop: '2px solid #00f2fe',
+          borderRight: '2px solid #00f2fe',
+          borderBottom: '2px solid rgba(0, 242, 254, 0.15)',
+          boxShadow: '0 0 18px rgba(0, 242, 254, 0.35)',
+          animation: 'loaderOrbit1 1.8s cubic-bezier(0.5, 0.1, 0.5, 0.9) infinite',
+        }} />
+
+        {/* Middle 3D Oblique Orbit Ring (Purple) */}
+        <div style={{
+          position: 'absolute',
+          width: '92px',
+          height: '92px',
+          borderRadius: '50%',
+          border: '2px solid transparent',
+          borderLeft: '2px solid #a855f7',
+          borderTop: '2px solid #a855f7',
+          boxShadow: '0 0 16px rgba(168, 85, 247, 0.4)',
+          animation: 'loaderOrbit3DX 2.4s linear infinite',
+        }} />
+
+        {/* Inner 3D Counter-Rotating Orbit Ring (Sky Blue) */}
+        <div style={{
+          position: 'absolute',
+          width: '70px',
+          height: '70px',
+          borderRadius: '50%',
+          border: '1.8px solid transparent',
+          borderTop: '1.8px solid #38bdf8',
+          borderBottom: '1.8px solid #38bdf8',
+          boxShadow: '0 0 12px rgba(56, 189, 248, 0.35)',
+          animation: 'loaderOrbit3DY 1.9s linear infinite',
+        }} />
+
+        {/* Compact, Perfectly Centered Micro Logo Shield */}
+        <div style={{
+          position: 'absolute',
+          top: '50%',
+          left: '50%',
+          width: '28px',
+          height: '28px',
+          marginTop: '-14px',
+          marginLeft: '-14px',
+          borderRadius: '8px',
+          background: 'linear-gradient(135deg, #00f2fe, #a855f7)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          animation: 'loaderPulseCore 2.4s ease-in-out infinite',
+          zIndex: 2,
+          boxShadow: '0 0 14px rgba(0, 242, 254, 0.45)',
+        }}>
+          <IconShield size={15} color="#ffffff" strokeWidth={2.4} />
+        </div>
       </div>
-      <h3 style={{ margin: '0 0 8px 0', fontSize: '1.3rem', fontWeight: 700, background: 'linear-gradient(135deg, #ffffff 20%, #38bdf8 65%, #a855f7 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', letterSpacing: '0.02em' }}>
+
+      {/* Clean Single-Focus Title & Status */}
+      <div style={{
+        fontSize: '1.45rem',
+        fontWeight: 800,
+        background: 'linear-gradient(135deg, #ffffff 20%, #00f2fe 65%, #a855f7 100%)',
+        WebkitBackgroundClip: 'text',
+        WebkitTextFillColor: 'transparent',
+        letterSpacing: '0.03em',
+        lineHeight: 1.2,
+      }}>
         {title}
-      </h3>
-      <p style={{ margin: 0, fontSize: '0.88rem', color: '#94a3b8', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
-        <span style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', background: '#00f2fe', boxShadow: '0 0 10px #00f2fe', animation: 'pulseDot 1.5s ease-in-out infinite' }} />
+      </div>
+
+      <div style={{
+        margin: '6px 0 0 0',
+        fontSize: '0.82rem',
+        color: '#94a3b8',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: '8px',
+        fontWeight: 600,
+        letterSpacing: '0.04em',
+        textTransform: 'uppercase',
+      }}>
+        <span style={{
+          display: 'inline-block',
+          width: '6px',
+          height: '6px',
+          borderRadius: '50%',
+          background: '#00f2fe',
+          boxShadow: '0 0 8px #00f2fe',
+          animation: 'loaderPulseDot 1.4s ease-in-out infinite',
+        }} />
         {subtitle}
-      </p>
+      </div>
     </div>
   );
 }
@@ -573,6 +714,77 @@ export function ToggleSwitch({ checked, onChange, label, description, icon = 'ðŸ
           boxShadow: '0 1px 3px rgba(0, 0, 0, 0.4)',
         }} />
       </div>
+    </div>
+  );
+}
+
+/* Standardized Enterprise Brand Logo */
+export function AdrishyaLogo({ size = 'default', showSubtitle = true, collapsed = false, onClick = null, style = {} }) {
+  const isLarge = size === 'large';
+  const isSmall = size === 'small';
+  const boxSize = isLarge ? '46px' : isSmall ? '32px' : '38px';
+  const iconSize = isLarge ? 24 : isSmall ? 18 : 22;
+
+  return (
+    <div
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: isLarge ? '14px' : '10px',
+        cursor: onClick ? 'pointer' : 'default',
+        userSelect: 'none',
+        ...style,
+      }}
+      onClick={onClick}
+    >
+      <div
+        style={{
+          width: boxSize,
+          height: boxSize,
+          borderRadius: isLarge ? '14px' : '10px',
+          background: 'linear-gradient(135deg, #00f2fe, #a855f7)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          boxShadow: '0 0 18px rgba(0, 242, 254, 0.42), inset 0 1px 2px rgba(255, 255, 255, 0.45)',
+          flex: 'none',
+          transition: 'transform 0.2s ease, box-shadow 0.2s ease',
+        }}
+      >
+        <IconShield size={iconSize} color="#ffffff" strokeWidth={2.2} />
+      </div>
+
+      {!collapsed && (
+        <div style={{ overflow: 'hidden', whiteSpace: 'nowrap' }}>
+          <div
+            style={{
+              fontWeight: 800,
+              fontSize: isLarge ? '1.5rem' : isSmall ? '0.92rem' : '1.05rem',
+              background: 'linear-gradient(135deg, #ffffff 20%, #00f2fe 65%, #a855f7 100%)',
+              WebkitBackgroundClip: 'text',
+              WebkitTextFillColor: 'transparent',
+              letterSpacing: isLarge ? '-0.02em' : '0.01em',
+              lineHeight: 1.15,
+            }}
+          >
+            Adrishya
+          </div>
+          {showSubtitle && (
+            <div
+              style={{
+                color: C.muted,
+                fontSize: isLarge ? '0.78rem' : '0.70rem',
+                fontWeight: 600,
+                textTransform: 'uppercase',
+                letterSpacing: '0.08em',
+                marginTop: '2px',
+              }}
+            >
+              Invisible Privacy Layer
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
