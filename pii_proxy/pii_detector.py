@@ -41,7 +41,6 @@ class PIIDetector:
     def __init__(self):
         self._compile_regexes()
         self._init_gliner()
-        self._init_presidio()
 
     def _init_gliner(self):
         """Zero-shot contextual decision layer using GLiNER (the premier open-source alternative to Jev)."""
@@ -55,27 +54,6 @@ class PIIDetector:
             except Exception as e:
                 print(f"GLiNER init skipped / fallback enabled: {e}")
                 self.gliner_model = None
-
-    def _init_presidio(self):
-        """NER pass (names / places) using Presidio on spaCy's small English model. Off unless ENABLE_PRESIDIO=true."""
-        self.presidio_analyzer = None
-        import os
-        if os.getenv("ENABLE_PRESIDIO", "false").lower() == "true":
-            try:
-                from presidio_analyzer import AnalyzerEngine
-                from presidio_analyzer.nlp_engine import NlpEngineProvider
-                nlp = NlpEngineProvider(nlp_configuration={
-                    "nlp_engine_name": "spacy",
-                    "models": [{"lang_code": "en", "model_name": "en_core_web_sm"}],
-                }).create_engine()
-                # Only the NER component is needed; dropping the parser/lemmatizer/tagger makes it ~2x faster.
-                for pipe in ("parser", "lemmatizer", "attribute_ruler", "senter", "tagger"):
-                    if pipe in nlp.nlp["en"].pipe_names:
-                        nlp.nlp["en"].disable_pipe(pipe)
-                self.presidio_analyzer = AnalyzerEngine(nlp_engine=nlp, supported_languages=["en"])
-            except Exception as e:
-                print(f"Presidio disabled: {e}")
-                self.presidio_analyzer = None
 
     def _compile_regexes(self):
         """Compile regex patterns for Shared, HIPAA, and Indian DPDP compliance frameworks."""
@@ -479,39 +457,6 @@ class PIIDetector:
                     start, end = m.start() + tokens[0][1], m.start() + tokens[-1][2]
                     matches.append(PIIMatch("NAME", 1, self.CATEGORIES[1], start, end, text[start:end], 0.85, "SHARED"))
 
-        # Optional Presidio NLP
-        if self.presidio_analyzer:
-            try:
-                results = self.presidio_analyzer.analyze(
-                    text=text,
-                    entities=["PERSON", "LOCATION", "NRP", "DATE_TIME"],
-                    language="en"
-                )
-                for res in results:
-                    if res.entity_type == "PERSON":
-                        matches.append(PIIMatch(
-                            entity_type="NAME",
-                            category_id=1,
-                            category_name=self.CATEGORIES[1],
-                            start=res.start,
-                            end=res.end,
-                            text=text[res.start:res.end],
-                            confidence=res.score,
-                            framework="SHARED"
-                        ))
-                    elif res.entity_type in ["LOCATION", "GPE"]:
-                        matches.append(PIIMatch(
-                            entity_type="GEO_DATA",
-                            category_id=2,
-                            category_name=self.CATEGORIES[2],
-                            start=res.start,
-                            end=res.end,
-                            text=text[res.start:res.end],
-                            confidence=res.score,
-                            framework="SHARED"
-                        ))
-            except Exception:
-                pass
 
         # Text we already masked ([REDACTED_PAN], [HASH:ab12cd34], [REMOVED: ...]) must not be detected again: a second pass
         # (a masked tool result becomes part of the next prompt) would otherwise label the placeholder word as a name.
