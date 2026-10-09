@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { C, Card, Kpi, DecisionChip, Empty, Loader, ScrollBox, LimitSelect, RequestTable, RequestDetail, ToggleSwitch, IconShield, IconZap, IconUser, mono } from './ui.jsx';
+import { C, Card, Kpi, DecisionChip, Empty, Loader, ScrollBox, LimitSelect, RequestTable, RequestDetail, ToggleSwitch, ComplianceInfoModal, IconShield, IconZap, IconUser, mono } from './ui.jsx';
 
 const inputStyle = {
   background: 'rgba(6, 10, 24, 0.75)',
@@ -883,6 +883,7 @@ export function UserView({ authedFetch, user, onOpenEvent }) {
   const [userMode, setUserMode] = useState(user.action_mode || 'HASH');
   const [hipaa, setHipaa] = useState(user.hipaa_enabled !== false);
   const [dpdp, setDpdp] = useState(user.dpdp_enabled !== false);
+  const [activeModal, setActiveModal] = useState(null);
   const [modeSaved, setModeSaved] = useState('');
   const [compSaved, setCompSaved] = useState('');
 
@@ -997,15 +998,19 @@ export function UserView({ authedFetch, user, onOpenEvent }) {
                 checked={hipaa}
                 onChange={next => saveCompliance(next, dpdp)}
                 label="HIPAA Compliance (US PHI)"
-                description="Medical & patient record identifiers (MRN, clinical dates, SSN...)"
+                description="Enforces 18 Safe Harbor medical & patient identifiers (MRN, health plan, clinical dates, SSN...)"
                 icon="🏥"
+                infoBadge="18 Identifiers ↗"
+                onInfo={() => setActiveModal('hipaa')}
               />
               <ToggleSwitch
                 checked={dpdp}
                 onChange={next => saveCompliance(hipaa, next)}
                 label="DPDP Compliance (India 2023)"
-                description="Aadhaar, PAN, UPI, Indian Mobile, PIN..."
+                description="Enforces 27 Personal Identifiers (Aadhaar, PAN, UPI, Indian mobile, PIN, salary, employee ID...)"
                 icon="🇮🇳"
+                infoBadge="27 Identifiers ↗"
+                onInfo={() => setActiveModal('dpdp')}
               />
             </div>
           </div>
@@ -1017,6 +1022,18 @@ export function UserView({ authedFetch, user, onOpenEvent }) {
         {!sessionOpen && <Card title="Categories found"><Bars items={Object.entries(stats?.category_counts || {}).map(([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value)} empty="No PII found for this user." /></Card>}
       </div>
       <LogsView authedFetch={authedFetch} uuid={user.user_uuid} onOpenSession={null} />
+
+      {activeModal && (
+        <ComplianceInfoModal
+          frameworkKey={activeModal}
+          onClose={() => setActiveModal(null)}
+          isEnabled={activeModal === 'hipaa' ? hipaa : dpdp}
+          onToggle={next => {
+            if (activeModal === 'hipaa') saveCompliance(next, dpdp);
+            else saveCompliance(hipaa, next);
+          }}
+        />
+      )}
     </>
   );
 }
@@ -1030,6 +1047,7 @@ export function OverviewUser({ authedFetch, me, onOpenEvent }) {
   const [dpdp, setDpdp] = useState(me.dpdp_enabled !== false);
   const [saved, setSaved] = useState('');
   const [compSaved, setCompSaved] = useState('');
+  const [activeModal, setActiveModal] = useState(null);
   const [copied, setCopied] = useState(false);
   const [stats, setStats] = useState(null);
   const [tokens, setTokens] = useState(null);
@@ -1151,6 +1169,8 @@ export function OverviewUser({ authedFetch, me, onOpenEvent }) {
                 label="HIPAA Compliance (US PHI)"
                 description="Enforces 18 Safe Harbor medical & patient identifiers (MRN, health plan, clinical dates, SSN...)"
                 icon="🏥"
+                infoBadge="18 Identifiers ↗"
+                onInfo={() => setActiveModal('hipaa')}
               />
               <ToggleSwitch
                 checked={dpdp}
@@ -1158,6 +1178,8 @@ export function OverviewUser({ authedFetch, me, onOpenEvent }) {
                 label="DPDP Compliance (India 2023)"
                 description="Enforces 27 Personal Identifiers (Aadhaar, PAN, UPI, Indian mobile, PIN, salary, employee ID...)"
                 icon="🇮🇳"
+                infoBadge="27 Identifiers ↗"
+                onInfo={() => setActiveModal('dpdp')}
               />
             </div>
             <div style={{ color: C.faint, fontSize: '0.78rem', marginTop: '10px' }}>
@@ -1219,6 +1241,18 @@ export function OverviewUser({ authedFetch, me, onOpenEvent }) {
           )}
         </Card>
       </div>
+
+      {activeModal && (
+        <ComplianceInfoModal
+          frameworkKey={activeModal}
+          onClose={() => setActiveModal(null)}
+          isEnabled={activeModal === 'hipaa' ? hipaa : dpdp}
+          onToggle={next => {
+            if (activeModal === 'hipaa') saveCompliance(next, dpdp);
+            else saveCompliance(hipaa, next);
+          }}
+        />
+      )}
     </>
   );
 }

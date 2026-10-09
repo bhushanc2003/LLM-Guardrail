@@ -680,10 +680,94 @@ export function RequestDetail({ eventId, authedFetch, onBack }) {
   );
 }
 
-export function ToggleSwitch({ checked, onChange, label, description, icon = '🛡️' }) {
+export const COMPLIANCE_FRAMEWORKS_DATA = {
+  hipaa: {
+    key: 'hipaa',
+    title: 'HIPAA Compliance (US PHI)',
+    badge: '18 Safe Harbor Identifiers (§ 164.514)',
+    law: 'Health Insurance Portability and Accountability Act (US HHS)',
+    icon: '🏥',
+    color: '#00f2fe',
+    description: 'Enforces strict Safe Harbor de-identification rules across 18 Protected Health Information (PHI) categories. Intercepts EHR identifiers, medical codes, patient numbers, clinical dates, and personal coordinates.',
+    identifiers: [
+      { id: 1, name: "Names (Patient, Relatives, Employers)", cat: "Names", example: "Dr. Robert Chen, Jane Doe", method: "Contextual Heuristics + Presidio NLP", desc: "Names of patients, relatives, household members, and clinical employers." },
+      { id: 2, name: "Geographic Subdivisions", cat: "Geographical", example: "742 Evergreen Terr, Springfield, 62704", method: "Street Grammar + US ZIP Parser", desc: "All subdivisions smaller than a state (street address, city, county, precinct, ZIP code)." },
+      { id: 3, name: "Clinical & Personal Dates", cat: "Dates", example: "DOB: 08/23/1984, Admitted: 10/02/2026", method: "Clinical Event & Slash Date Regex", desc: "All dates directly related to an individual (birth, admission, discharge, death, exact ages > 89)." },
+      { id: 4, name: "Telephone Numbers", cat: "Telephony", example: "+1 (555) 234-5678, 202-555-0199", method: "NANP & E.164 Phone Parser", desc: "Patient, physician, and emergency contact phone and cellular numbers." },
+      { id: 5, name: "Fax Numbers", cat: "Telephony", example: "Fax: +1-212-555-0143", method: "Keyword-Anchored Fax Regex", desc: "Medical clinic, pharmacy, and hospital facsimile communication lines." },
+      { id: 6, name: "Email Addresses", cat: "Digital", example: "jane.doe@hospital.org", method: "RFC 5322 Standard Matcher", desc: "Electronic mail contact addresses of individuals." },
+      { id: 7, name: "Social Security Numbers (SSN)", cat: "National ID", example: "123-45-6789", method: "9-Digit Structured Grammar", desc: "United States Social Security Numbers across standard 3-2-4 hyphenated formats." },
+      { id: 8, name: "Medical Record Numbers (MRN)", cat: "Medical / EHR", example: "MRN-4820194, Med Rec #992144", method: "Healthcare Anchor & Prefix Matcher", desc: "Hospital, clinical chart, and Electronic Health Record (EHR) unique identification codes." },
+      { id: 9, name: "Health Plan Beneficiary Numbers", cat: "Insurance", example: "HICN-9948201, Policy #POL-88321", method: "Policy & Member ID Grammar", desc: "Health insurance policy numbers, Medicare HICN, Medicaid IDs, and subscriber numbers." },
+      { id: 10, name: "Account Numbers (Bank & Billing)", cat: "Financial", example: "Acct #440291049281, IBAN US99...", method: "Keyword-Bounded Account Matcher", desc: "Patient hospital billing accounts, credit balances, and bank account numbers." },
+      { id: 11, name: "Certificate & License Numbers", cat: "Licenses", example: "DL #D98472019, Med Lic #MD-4819", method: "State & Medical Board Regex", desc: "Physician state license numbers, patient driver's licenses, and professional credentials." },
+      { id: 12, name: "Vehicle Identifiers (VIN & Plates)", cat: "Vehicles", example: "1HGCR2F83HA123456, Plate #7XYZ89", method: "ISO 3779 VIN + Plate Grammar", desc: "Vehicle Identification Numbers (VIN) and vehicle license plate serials." },
+      { id: 13, name: "Device Identifiers & Serial Numbers", cat: "Hardware", example: "IMEI: 352099001761481, Serial #SN-882", method: "Hardware & Pacemaker Serial Matcher", desc: "Implanted medical device serials, telemetry monitors, and hardware IMEIs." },
+      { id: 14, name: "Web Universal Resource Locators (URLs)", cat: "Digital", example: "https://portal.clinic.org/patient/992", method: "URI Scheme & FQDN Parser", desc: "Patient portal URLs, personal website links, and medical record hyperlinks." },
+      { id: 15, name: "Internet Protocol (IP) Addresses", cat: "Network", example: "192.168.1.105, 2001:db8::1", method: "Validated Octet IPv4 / IPv6 Parser", desc: "Inbound client IP addresses, telemedicine endpoints, and network host addresses." },
+      { id: 16, name: "Biometric Identifiers", cat: "Biometric", example: "Fingerprint ID: FP-8812, Retinal Scan", method: "Clinical Biometric Matcher", desc: "Fingerprints, voiceprints, retinal scans, and biometric telemetry data." },
+      { id: 17, name: "Full Face Photos & Medical Images", cat: "Imaging", example: "DICOM (.dcm), Patient Photo attachment", method: "Multimodal Tag & Image Meta Parser", desc: "Full-face photographic images and any comparable clinical imagery identifying the individual." },
+      { id: 18, name: "Any Unique Patient Identifier", cat: "Unique Codes", example: "Patient ID: PID-992019", method: "Patient Specific Prefix Matcher", desc: "Any unique identifying number, characteristic, or code not otherwise specified." }
+    ]
+  },
+  dpdp: {
+    key: 'dpdp',
+    title: 'DPDP Compliance (India 2023)',
+    badge: '27 Personal Identifiers',
+    law: 'Digital Personal Data Protection Act 2023 (Ministry of Electronics & IT, India)',
+    icon: '🇮🇳',
+    color: '#f59e0b',
+    description: 'Enforces comprehensive digital personal data protection across 27 Indian citizen identifiers. Guards national IDs (Aadhaar, PAN, Voter ID, Passport), financial rails (UPI handles, IFSC, Bank Accounts), compensation (CTC, Salary), and telemetry.',
+    identifiers: [
+      { id: 1, name: "Aadhaar Number (UIDAI)", cat: "National ID", example: "4532 8901 2345", method: "Verhoeff Checksum + 12-Digit UID", desc: "12-digit Indian national identity number issued by UIDAI with Verhoeff algorithmic validation." },
+      { id: 2, name: "Permanent Account Number (PAN)", cat: "Tax & Financial", example: "ABCDE1234F", method: "ITD 10-Char Grammar (5L-4N-1L)", desc: "10-digit alphanumeric identifier issued by the Indian Income Tax Department with entity type encoding." },
+      { id: 3, name: "UPI Handles & VPAs", cat: "Payments", example: "rajesh.kumar@okhdfcbank, user@paytm", method: "VPA Bank Extension Registry", desc: "Unified Payments Interface Virtual Payment Addresses mapped to NPCI bank provider handles." },
+      { id: 4, name: "Indian Mobile Numbers", cat: "Telephony", example: "+91 9876543210, 9820112345", method: "TRAI +91 & [6-9] 10-Digit Grammar", desc: "10-digit Indian cellular telephone series starting with authorized TRAI prefixes (6, 7, 8, 9)." },
+      { id: 5, name: "Indian PIN Code", cat: "Geographical", example: "PIN: 400001, 560038, 110001", method: "Postal Anchor + 6-Digit Non-Zero Regex", desc: "6-digit Postal Index Numbers designating sorting and delivery postal districts across India." },
+      { id: 6, name: "Indian Passport Number", cat: "Travel ID", example: "Passport No: Z1234567, A9876543", method: "MEA 1-Letter + 7-Digit Grammar", desc: "Indian Ministry of External Affairs travel document passport numbers." },
+      { id: 7, name: "Voter ID (EPIC Card)", cat: "Electoral ID", example: "EPIC: ABC1234567", method: "ECI 3-Letter + 7-Digit Parser", desc: "Elector's Photo Identity Card number issued by the Election Commission of India." },
+      { id: 8, name: "Indian Driving Licence (DL)", cat: "Transport ID", example: "MH12-20180012345, DL0420210001234", method: "Parivahan Sarathi State+RTO Syntax", desc: "Indian Motor Vehicles driving licence with 2-letter state code, 2-digit RTO, and license number." },
+      { id: 9, name: "IFSC Bank Branch Code", cat: "Banking", example: "HDFC0001234, SBIN0004567", method: "RBI 11-Char Format (4L-0-6AN)", desc: "Reserve Bank of India 11-character code identifying electronic funds transfer bank branches." },
+      { id: 10, name: "Employee ID / Staff Number", cat: "Corporate", example: "Emp ID: EMP-99214, Staff #8821", method: "Corporate Workplace Context Regex", desc: "Workplace identification, staff personnel numbers, and corporate badge credentials." },
+      { id: 11, name: "Salary & Compensation History", cat: "Financial", example: "Salary: ₹18.5 LPA, CTC: 1,50,000 pm", method: "Currency (₹/Rs/INR) + CTC Heuristic", desc: "Compensation packages, annual CTC (LPA), monthly salary, stipends, and bonus figures." },
+      { id: 12, name: "Student ID & Roll Numbers", cat: "Academic", example: "Roll No: 20BCS1042, Reg #992144", method: "Academic Institution Anchor Regex", desc: "University enrollment numbers, student registration codes, and school roll numbers." },
+      { id: 13, name: "Personal & Full Names", cat: "Identity", example: "Shri Rajesh Kumar, Anita Sharma", method: "Honorifics (Shri/Smt/Dr) + NER", desc: "Full citizen names, patronymics, and honorific-prefixed identity records." },
+      { id: 14, name: "Residential & Street Addresses", cat: "Geographical", example: "Flat 402, Shanti Towers, MG Road", method: "Premise & Locality Boundary Parser", desc: "Residential premises, apartment numbers, street names, and postal delivery locations." },
+      { id: 15, name: "City, District & Locality", cat: "Geographical", example: "City: Pune, District: Ernakulam", method: "Geopolitical Location Classifier", desc: "Indian administrative districts, metropolitan areas, talukas, and municipal towns." },
+      { id: 16, name: "Personal Email Addresses", cat: "Digital", example: "rajesh.kumar@gmail.com", method: "RFC 5322 Standard Grammar", desc: "Personal, business, and enterprise electronic mail accounts." },
+      { id: 17, name: "Landline & STD Telephone", cat: "Telephony", example: "Tel: 020-25678901, 011-23456789", method: "STD Area Code + Landline Parser", desc: "Indian fixed-line telecommunication numbers with regional STD codes." },
+      { id: 18, name: "Bank Account Numbers", cat: "Banking", example: "Acct #987654321012, 11-16 digits", method: "Banking Anchor + Digit Sequence", desc: "Indian commercial bank savings, current, and overdraft account numbers." },
+      { id: 19, name: "Credit & Debit Card Numbers", cat: "Payments", example: "RuPay 6071 ..., Visa, Mastercard", method: "Luhn Mod-10 + Card BIN Matcher", desc: "Payment card PAN numbers across RuPay, Visa, Mastercard, and Amex networks." },
+      { id: 20, name: "Age & Demographic Pairings", cat: "Demographics", example: "Age: 32 years, Male, aged 28", method: "Demographic Pairing Heuristics", desc: "Age records linked to identifiable gender or personal characteristics." },
+      { id: 21, name: "Date of Birth (DOB)", cat: "Dates", example: "DOB: 15/08/1992, Born: 1985-04-12", method: "ISO/Indian Slash Date Regex", desc: "Calendar birth dates identifying the individual." },
+      { id: 22, name: "Precise GPS Coordinates", cat: "Location", example: "GPS: 18.5204° N, 73.8567° E", method: "Coordinate Lat/Long Parser", desc: "Precise global positioning coordinates and mobile telemetry locations." },
+      { id: 23, name: "Device Hardware IDs (IMEI / MAC)", cat: "Hardware", example: "IMEI: 864201048291048, 00:1A:2B:...", method: "MAC Hex & 15-Digit IMEI Parser", desc: "Mobile device IMEI codes and network interface MAC addresses." },
+      { id: 24, name: "IP Addresses (IPv4 & IPv6)", cat: "Network", example: "103.21.244.0, 2405:201::", method: "Validated IP Octet Matcher", desc: "Public and private IP addresses assigning network activity to an individual." },
+      { id: 25, name: "Vehicle Registration (RC)", cat: "Transport", example: "MH 12 AB 1234, DL 01 CA 5678", method: "State + District + Series RC Grammar", desc: "Regional Transport Office (RTO) vehicle registration certificate numbers." },
+      { id: 26, name: "UUIDs & System Identifiers", cat: "Digital", example: "550e8400-e29b-41d4-a716-446655440000", method: "RFC 4122 Standard GUID Regex", desc: "Universally Unique Identifiers assigned to user sessions, devices, and records." },
+      { id: 27, name: "Personal Profile / Web URLs", cat: "Digital", example: "linkedin.com/in/rajesh-kumar", method: "FQDN & Profile Path Matcher", desc: "Social profiles, professional portfolios, and individual web endpoints." }
+    ]
+  }
+};
+
+export function ToggleSwitch({
+  checked,
+  onChange,
+  label,
+  description,
+  icon = '🛡️',
+  onInfo = null,
+  infoBadge = null,
+}) {
   return (
     <div
-      onClick={() => onChange(!checked)}
+      onClick={() => {
+        if (onInfo) {
+          onInfo();
+        } else {
+          onChange(!checked);
+        }
+      }}
       style={{
         display: 'flex',
         alignItems: 'center',
@@ -699,11 +783,39 @@ export function ToggleSwitch({ checked, onChange, label, description, icon = '�
         userSelect: 'none',
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-        <span style={{ fontSize: '1.25rem' }}>{icon}</span>
-        <div>
-          <div style={{ fontWeight: 700, fontSize: '0.92rem', color: checked ? '#f8fafc' : C.muted }}>
-            {label}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1, minWidth: 0 }}>
+        <span style={{ fontSize: '1.25rem', flex: 'none' }}>{icon}</span>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+            <span style={{ fontWeight: 700, fontSize: '0.92rem', color: checked ? '#f8fafc' : C.muted }}>
+              {label}
+            </span>
+            {infoBadge && (
+              <span
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onInfo && onInfo();
+                }}
+                style={{
+                  fontSize: '0.70rem',
+                  padding: '2px 8px',
+                  borderRadius: '6px',
+                  background: 'rgba(0, 242, 254, 0.12)',
+                  color: '#00f2fe',
+                  border: '1px solid rgba(0, 242, 254, 0.3)',
+                  fontWeight: 600,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease',
+                }}
+                title="Click to view all covered identifiers"
+              >
+                <span>ℹ️</span>
+                <span>{infoBadge}</span>
+              </span>
+            )}
           </div>
           {description && (
             <div style={{ fontSize: '0.76rem', color: C.faint, marginTop: '2px' }}>
@@ -712,19 +824,27 @@ export function ToggleSwitch({ checked, onChange, label, description, icon = '�
           )}
         </div>
       </div>
-      <div style={{
-        width: '46px',
-        height: '24px',
-        borderRadius: '12px',
-        background: checked ? 'linear-gradient(135deg, #00f2fe, #a855f7)' : 'rgba(255, 255, 255, 0.1)',
-        padding: '2px',
-        boxSizing: 'border-box',
-        display: 'flex',
-        alignItems: 'center',
-        transition: 'all 0.2s ease',
-        boxShadow: checked ? '0 0 12px rgba(0, 242, 254, 0.4)' : 'none',
-        flex: 'none',
-      }}>
+      <div
+        onClick={(e) => {
+          e.stopPropagation();
+          onChange(!checked);
+        }}
+        title={`Click to turn ${checked ? 'OFF' : 'ON'}`}
+        style={{
+          width: '46px',
+          height: '24px',
+          borderRadius: '12px',
+          background: checked ? 'linear-gradient(135deg, #00f2fe, #a855f7)' : 'rgba(255, 255, 255, 0.1)',
+          padding: '2px',
+          boxSizing: 'border-box',
+          display: 'flex',
+          alignItems: 'center',
+          transition: 'all 0.2s ease',
+          boxShadow: checked ? '0 0 12px rgba(0, 242, 254, 0.4)' : 'none',
+          flex: 'none',
+          marginLeft: '12px',
+        }}
+      >
         <div style={{
           width: '20px',
           height: '20px',
@@ -734,6 +854,370 @@ export function ToggleSwitch({ checked, onChange, label, description, icon = '�
           transition: 'transform 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
           boxShadow: '0 1px 3px rgba(0, 0, 0, 0.4)',
         }} />
+      </div>
+    </div>
+  );
+}
+
+export function ComplianceInfoModal({ frameworkKey, onClose, isEnabled = true, onToggle = null }) {
+  const [search, setSearch] = useState('');
+  const data = COMPLIANCE_FRAMEWORKS_DATA[frameworkKey];
+
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
+
+  if (!data) return null;
+
+  const filtered = data.identifiers.filter(item => {
+    if (!search.trim()) return true;
+    const q = search.toLowerCase();
+    return (
+      item.name.toLowerCase().includes(q) ||
+      item.cat.toLowerCase().includes(q) ||
+      item.example.toLowerCase().includes(q) ||
+      item.desc.toLowerCase().includes(q) ||
+      item.method.toLowerCase().includes(q)
+    );
+  });
+
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 9999,
+        background: 'rgba(2, 6, 18, 0.82)',
+        backdropFilter: 'blur(16px)',
+        WebkitBackdropFilter: 'blur(16px)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '20px',
+        animation: 'modalFadeIn 0.2s ease-out',
+      }}
+    >
+      <style>{`
+        @keyframes modalFadeIn {
+          from { opacity: 0; transform: scale(0.97); }
+          to { opacity: 1; transform: scale(1); }
+        }
+      `}</style>
+
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: '100%',
+          maxWidth: '820px',
+          maxHeight: '90vh',
+          background: 'linear-gradient(135deg, rgba(13, 20, 39, 0.98) 0%, rgba(6, 10, 24, 0.98) 100%)',
+          border: `1.5px solid ${data.color}55`,
+          borderRadius: '18px',
+          boxShadow: `0 24px 60px rgba(0, 0, 0, 0.8), 0 0 35px ${data.color}22`,
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'hidden',
+          position: 'relative',
+        }}
+      >
+        {/* Top Accent Gradient Bar */}
+        <div style={{ height: '3px', background: `linear-gradient(90deg, ${data.color}, #a855f7)` }} />
+
+        {/* Modal Header */}
+        <div style={{
+          padding: '22px 26px 18px 26px',
+          borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+          display: 'flex',
+          alignItems: 'flex-start',
+          justifyContent: 'space-between',
+          gap: '16px',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+            <div style={{
+              width: '48px',
+              height: '48px',
+              borderRadius: '12px',
+              background: `linear-gradient(135deg, ${data.color}22, rgba(168, 85, 247, 0.15))`,
+              border: `1.5px solid ${data.color}66`,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: '1.6rem',
+              boxShadow: `0 0 16px ${data.color}33`,
+            }}>
+              {data.icon}
+            </div>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 800, color: '#f8fafc' }}>
+                  {data.title}
+                </h3>
+                <span style={{
+                  fontSize: '0.74rem',
+                  padding: '3px 10px',
+                  borderRadius: '20px',
+                  background: isEnabled ? 'rgba(16, 185, 129, 0.15)' : 'rgba(255, 255, 255, 0.08)',
+                  color: isEnabled ? '#10b981' : '#94a3b8',
+                  border: `1px solid ${isEnabled ? 'rgba(16, 185, 129, 0.35)' : 'rgba(255, 255, 255, 0.12)'}`,
+                  fontWeight: 700,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.04em',
+                }}>
+                  {isEnabled ? '● Active & Enforcing' : '○ Disabled'}
+                </span>
+              </div>
+              <div style={{ fontSize: '0.80rem', color: '#94a3b8', marginTop: '4px' }}>
+                {data.law} · <span style={{ color: data.color, fontWeight: 700 }}>{data.badge}</span>
+              </div>
+            </div>
+          </div>
+
+          <button
+            onClick={onClose}
+            style={{
+              background: 'rgba(255, 255, 255, 0.06)',
+              border: '1px solid rgba(255, 255, 255, 0.12)',
+              borderRadius: '8px',
+              color: '#94a3b8',
+              width: '32px',
+              height: '32px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'pointer',
+              fontSize: '1.1rem',
+              transition: 'all 0.15s ease',
+            }}
+            title="Close (Esc)"
+          >
+            ✕
+          </button>
+        </div>
+
+        {/* Description Banner & Search */}
+        <div style={{
+          padding: '16px 26px',
+          background: 'rgba(6, 10, 24, 0.65)',
+          borderBottom: '1px solid rgba(255, 255, 255, 0.06)',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '12px',
+        }}>
+          <p style={{ margin: 0, fontSize: '0.84rem', color: '#cbd5e1', lineHeight: 1.5 }}>
+            {data.description}
+          </p>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <div style={{ position: 'relative', flex: 1 }}>
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder={`Search covered identifiers (e.g. MRN, PAN, Aadhaar, dates, email)...`}
+                style={{
+                  width: '100%',
+                  padding: '9px 14px 9px 36px',
+                  borderRadius: '8px',
+                  background: 'rgba(12, 19, 39, 0.85)',
+                  border: '1px solid rgba(0, 242, 254, 0.25)',
+                  color: '#f8fafc',
+                  fontSize: '0.84rem',
+                  outline: 'none',
+                  boxSizing: 'border-box',
+                }}
+              />
+              <span style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#64748b', fontSize: '0.85rem' }}>
+                🔍
+              </span>
+              {search && (
+                <button
+                  onClick={() => setSearch('')}
+                  style={{
+                    position: 'absolute',
+                    right: '10px',
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    background: 'transparent',
+                    border: 'none',
+                    color: '#94a3b8',
+                    cursor: 'pointer',
+                    fontSize: '0.8rem',
+                  }}
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+
+            <div style={{
+              fontSize: '0.78rem',
+              color: '#94a3b8',
+              flex: 'none',
+              fontFamily: mono,
+              fontWeight: 600,
+            }}>
+              {filtered.length} of {data.identifiers.length}
+            </div>
+          </div>
+        </div>
+
+        {/* Scrollable Identifier Grid */}
+        <div style={{
+          padding: '20px 26px',
+          overflowY: 'auto',
+          flex: 1,
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))',
+          gap: '12px',
+          alignContent: 'start',
+        }}>
+          {filtered.length === 0 ? (
+            <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '40px 0', color: '#64748b', fontStyle: 'italic' }}>
+              No covered identifiers match "{search}"
+            </div>
+          ) : (
+            filtered.map((item) => (
+              <div
+                key={item.id}
+                style={{
+                  padding: '14px 16px',
+                  borderRadius: '10px',
+                  background: 'rgba(12, 19, 39, 0.7)',
+                  border: '1px solid rgba(255, 255, 255, 0.07)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '6px',
+                  transition: 'border-color 0.15s ease',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{
+                      fontSize: '0.70rem',
+                      fontWeight: 800,
+                      color: data.color,
+                      fontFamily: mono,
+                      background: `${data.color}15`,
+                      border: `1px solid ${data.color}35`,
+                      padding: '1px 6px',
+                      borderRadius: '4px',
+                    }}>
+                      #{item.id}
+                    </span>
+                    <span style={{ fontWeight: 700, fontSize: '0.88rem', color: '#f8fafc' }}>
+                      {item.name}
+                    </span>
+                  </div>
+                  <span style={{
+                    fontSize: '0.68rem',
+                    padding: '2px 7px',
+                    borderRadius: '4px',
+                    background: 'rgba(168, 85, 247, 0.12)',
+                    color: '#c084fc',
+                    border: '1px solid rgba(168, 85, 247, 0.25)',
+                    fontWeight: 600,
+                    flex: 'none',
+                  }}>
+                    {item.cat}
+                  </span>
+                </div>
+
+                <div style={{ fontSize: '0.78rem', color: '#94a3b8', lineHeight: 1.4 }}>
+                  {item.desc}
+                </div>
+
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: '8px',
+                  marginTop: '4px',
+                  paddingTop: '6px',
+                  borderTop: '1px solid rgba(255, 255, 255, 0.05)',
+                  fontSize: '0.72rem',
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px', overflow: 'hidden' }}>
+                    <span style={{ color: '#64748b' }}>Ex:</span>
+                    <code style={{
+                      fontFamily: mono,
+                      color: '#00f2fe',
+                      background: 'rgba(0, 242, 254, 0.08)',
+                      padding: '1px 6px',
+                      borderRadius: '4px',
+                      whiteSpace: 'nowrap',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                    }}>
+                      {item.example}
+                    </code>
+                  </div>
+                  <span style={{ color: '#64748b', fontSize: '0.68rem', flex: 'none' }} title={item.method}>
+                    {item.method.split(' ')[0]}
+                  </span>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+
+        {/* Modal Footer */}
+        <div style={{
+          padding: '14px 26px',
+          borderTop: '1px solid rgba(255, 255, 255, 0.08)',
+          background: 'rgba(6, 10, 24, 0.9)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: '12px',
+        }}>
+          <div style={{ fontSize: '0.78rem', color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <span style={{ color: '#00f2fe' }}>🔒</span>
+            <span>Covered items are automatically sanitized via your active Governance policy (HASH / REDACT / BLOCK).</span>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            {onToggle && (
+              <button
+                onClick={() => onToggle(!isEnabled)}
+                style={{
+                  padding: '7px 16px',
+                  borderRadius: '8px',
+                  border: isEnabled ? '1px solid rgba(244, 63, 94, 0.4)' : '1px solid rgba(16, 185, 129, 0.4)',
+                  background: isEnabled ? 'rgba(244, 63, 94, 0.1)' : 'rgba(16, 185, 129, 0.1)',
+                  color: isEnabled ? '#fb7185' : '#10b981',
+                  cursor: 'pointer',
+                  fontSize: '0.80rem',
+                  fontWeight: 600,
+                  transition: 'all 0.15s ease',
+                }}
+              >
+                {isEnabled ? 'Turn OFF' : 'Turn ON'}
+              </button>
+            )}
+            <button
+              onClick={onClose}
+              style={{
+                padding: '7px 20px',
+                borderRadius: '8px',
+                border: 'none',
+                background: 'linear-gradient(135deg, #00f2fe, #a855f7)',
+                color: '#041324',
+                fontWeight: 700,
+                cursor: 'pointer',
+                fontSize: '0.82rem',
+                boxShadow: '0 0 16px rgba(0, 242, 254, 0.35)',
+              }}
+            >
+              Done
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );
