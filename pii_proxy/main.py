@@ -122,6 +122,15 @@ async def serve_static_asset(file_path: str):
         return FileResponse(asset_file, headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
     raise HTTPException(status_code=404, detail="Asset not found")
 
+@app.api_route("/architecture", methods=["GET", "HEAD"], response_class=HTMLResponse)
+@app.api_route("/docs/architecture", methods=["GET", "HEAD"], response_class=HTMLResponse)
+async def render_architecture_viewer():
+    viewer_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "DOCS", "architecture_viewer.html")
+    if os.path.exists(viewer_path):
+        with open(viewer_path, "r", encoding="utf-8") as f:
+            return HTMLResponse(content=f.read(), headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
+    raise HTTPException(status_code=404, detail="Architecture viewer not found")
+
 @app.api_route("/", methods=["GET", "HEAD"], response_class=HTMLResponse)
 @app.api_route("/overview", methods=["GET", "HEAD"], response_class=HTMLResponse)
 @app.api_route("/activity", methods=["GET", "HEAD"], response_class=HTMLResponse)

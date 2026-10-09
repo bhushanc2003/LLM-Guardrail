@@ -1,0 +1,646 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GuardIAn — Full System & Agentic Architecture Blueprint</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/svg-pan-zoom@3.6.1/dist/svg-pan-zoom.min.js"></script>
+  <style>
+    :root {
+      --bg: #060913;
+      --card-bg: rgba(12, 19, 39, 0.75);
+      --border: rgba(0, 242, 254, 0.2);
+      --accent: #00f2fe;
+      --accent-purple: #a855f7;
+      --text: #f8fafc;
+      --muted: #94a3b8;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background: radial-gradient(ellipse at 50% 0%, #0d152e 0%, var(--bg) 75%);
+      color: var(--text);
+      font-family: 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow-x: hidden;
+    }
+
+    header {
+      padding: 20px 32px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--border);
+      background: rgba(6, 9, 19, 0.85);
+      backdrop-filter: blur(16px);
+      position: sticky;
+      top: 0;
+      z-index: 50;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .brand-logo {
+      width: 36px;
+      height: 36px;
+      border-radius: 10px;
+      background: linear-gradient(135deg, #00f2fe, #a855f7);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+      box-shadow: 0 0 16px rgba(0, 242, 254, 0.4);
+    }
+
+    .brand-title {
+      font-size: 1.25rem;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      background: linear-gradient(135deg, #ffffff 40%, #00f2fe 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .brand-subtitle {
+      font-size: 0.78rem;
+      color: var(--muted);
+      font-weight: 500;
+    }
+
+    .header-badges {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      background: rgba(0, 242, 254, 0.08);
+      border: 1px solid rgba(0, 242, 254, 0.25);
+      color: var(--accent);
+    }
+
+    .nav-tabs {
+      display: flex;
+      gap: 8px;
+      padding: 12px 32px;
+      background: rgba(8, 14, 30, 0.6);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+      overflow-x: auto;
+    }
+
+    .tab-btn {
+      background: transparent;
+      border: 1px solid transparent;
+      color: var(--muted);
+      padding: 8px 16px;
+      border-radius: 8px;
+      font-size: 0.88rem;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      transition: all 0.2s ease;
+      white-space: nowrap;
+    }
+
+    .tab-btn:hover {
+      color: var(--text);
+      background: rgba(255, 255, 255, 0.04);
+    }
+
+    .tab-btn.active {
+      color: var(--accent);
+      background: rgba(0, 242, 254, 0.1);
+      border-color: rgba(0, 242, 254, 0.35);
+      box-shadow: 0 0 12px rgba(0, 242, 254, 0.2);
+    }
+
+    .main-container {
+      flex: 1;
+      padding: 24px 32px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .diagram-card {
+      flex: 1;
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      display: flex;
+      flex-direction: column;
+      min-height: 680px;
+      position: relative;
+      overflow: hidden;
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
+    }
+
+    .card-toolbar {
+      padding: 14px 20px;
+      background: rgba(6, 10, 24, 0.8);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      z-index: 10;
+    }
+
+    .diagram-title {
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: #ffffff;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .toolbar-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .tool-btn {
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      color: var(--text);
+      padding: 6px 12px;
+      border-radius: 6px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.15s ease;
+    }
+
+    .tool-btn:hover {
+      background: rgba(0, 242, 254, 0.15);
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    .diagram-viewport {
+      flex: 1;
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      padding: 20px;
+      background: radial-gradient(circle at center, rgba(14, 22, 45, 0.5) 0%, rgba(6, 9, 19, 0.95) 100%);
+    }
+
+    .mermaid-container {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .mermaid-container svg {
+      max-width: 100%;
+      height: auto;
+    }
+
+    .legend-panel {
+      padding: 16px 24px;
+      background: rgba(6, 10, 24, 0.7);
+      border-top: 1px solid rgba(255, 255, 255, 0.06);
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      flex-wrap: wrap;
+      font-size: 0.8rem;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .legend-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 3px;
+    }
+
+    footer {
+      padding: 16px 32px;
+      text-align: center;
+      font-size: 0.75rem;
+      color: var(--muted);
+      border-top: 1px solid rgba(255, 255, 255, 0.05);
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="brand">
+      <div class="brand-logo">🛡️</div>
+      <div>
+        <div class="brand-title">GuardIAn System Architecture Viewer</div>
+        <div class="brand-subtitle">Zero-Trust LLM Privacy, Compliance & Agentic Orchestration Guardrail</div>
+      </div>
+    </div>
+    <div class="header-badges">
+      <span class="badge">🏥 HIPAA 18 Safe Harbor</span>
+      <span class="badge">🇮🇳 DPDP Act 2023 (27 IDs)</span>
+      <span class="badge">🤖 Autonomous Agents Ready</span>
+      <span class="badge" style="border-color: rgba(168, 85, 247, 0.35); color: #c084fc;">⚡ Latency: &lt;0.5ms / ~45ms</span>
+    </div>
+  </header>
+
+  <nav class="nav-tabs">
+    <button class="tab-btn active" onclick="switchDiagram(0)">
+      <span>🌐</span> 1. Master System & Ecosystem Architecture
+    </button>
+    <button class="tab-btn" onclick="switchDiagram(1)">
+      <span>🏥</span> 2. Ingress Compliance & Hybrid Neural Detection
+    </button>
+    <button class="tab-btn" onclick="switchDiagram(2)">
+      <span>🛠️</span> 3. Dual-Sided Tool Call & Function Guardrails
+    </button>
+    <button class="tab-btn" onclick="switchDiagram(3)">
+      <span>🤖</span> 4. Single-Agent vs. Multi-Agent Swarm Orchestration
+    </button>
+  </nav>
+
+  <main class="main-container">
+    <div class="diagram-card">
+      <div class="card-toolbar">
+        <div class="diagram-title" id="diagram-title">
+          <span>🌐</span> 1. Master System & Ecosystem Architecture
+        </div>
+        <div class="toolbar-actions">
+          <button class="tool-btn" onclick="zoomIn()">➕ Zoom In</button>
+          <button class="tool-btn" onclick="zoomOut()">➖ Zoom Out</button>
+          <button class="tool-btn" onclick="resetZoom()">↺ Reset View</button>
+          <button class="tool-btn" onclick="toggleFullscreen()">⛶ Fullscreen</button>
+        </div>
+      </div>
+
+      <div class="diagram-viewport" id="viewport">
+        <div class="mermaid-container" id="mermaid-target"></div>
+      </div>
+
+      <div class="legend-panel">
+        <strong style="color: var(--accent);">Architecture Components:</strong>
+        <div class="legend-item"><div class="legend-dot" style="background: #00f2fe;"></div> Client & Ingress</div>
+        <div class="legend-item"><div class="legend-dot" style="background: #a855f7;"></div> Guardrail & Enforcement</div>
+        <div class="legend-item"><div class="legend-dot" style="background: #10b981;"></div> Autonomous Agents & Swarms</div>
+        <div class="legend-item"><div class="legend-dot" style="background: #f59e0b;"></div> Dual-Sided Tool Interception</div>
+        <div class="legend-item"><div class="legend-dot" style="background: #6366f1;"></div> Upstream Foundation Models</div>
+        <div class="legend-item"><div class="legend-dot" style="background: #ec4899;"></div> Cryptographic Session Vault</div>
+      </div>
+    </div>
+  </main>
+
+  <footer>
+    GuardIAn Architecture Blueprint • Tested & Audited across 50 Compliance Scenarios • Dual-Stack Port :8000
+  </footer>
+
+  <script>
+    mermaid.initialize({
+      startOnLoad: false,
+      theme: 'dark',
+      securityLevel: 'loose',
+      flowchart: {
+        curve: 'basis',
+        useMaxWidth: false,
+        htmlLabels: true
+      }
+    });
+
+    const diagrams = [
+      // 1. MASTER SYSTEM ARCHITECTURE
+      `flowchart TD
+    classDef client fill:#090d1a,stroke:#00f2fe,stroke-width:2px,color:#f8fafc;
+    classDef proxy fill:#0c1327,stroke:#38bdf8,stroke-width:2px,color:#f8fafc;
+    classDef guardrail fill:#151030,stroke:#a855f7,stroke-width:2px,color:#f8fafc;
+    classDef agent fill:#0a192f,stroke:#10b981,stroke-width:2px,color:#f8fafc;
+    classDef tool fill:#1f1625,stroke:#f59e0b,stroke-width:2px,color:#f8fafc;
+    classDef llm fill:#1e1b4b,stroke:#6366f1,stroke-width:2px,color:#f8fafc;
+    classDef vault fill:#1c1917,stroke:#ec4899,stroke-width:2px,color:#f8fafc;
+
+    subgraph CLIENT_LAYER["1. Client Ingress Layer"]
+        C1["Client Web / Mobile UI"]:::client
+        C2["Agentic SDK / Cline / Cursor"]:::client
+        C3["Enterprise Backend API"]:::client
+    end
+
+    C1 -->|"Inbound Prompt / Tool Request"| GW["GuardIAn API Gateway & Router\n(:8000/proxy/{uuid}/v1)"]:::proxy
+    C2 --> GW
+    C3 --> GW
+
+    subgraph INGRESS_PIPELINE["2. Ingress Guardrail Engine"]
+        GW --> CS["Compliance Context Router\n(HIPAA Active / DPDP Active)"]:::guardrail
+        CS --> T0{"Advanced Filtering\nActive?"}:::guardrail
+
+        T0 -->|"OFF (<0.5ms)"| DET_FAST["Tier 0: Deterministic Matchers\n• Luhn Checksum (Cards)\n• Verhoeff Checksum (Aadhaar)\n• ITD Grammar (PAN Card)\n• SSN, MRN, Dates, UPI, Phones"]:::guardrail
+        T0 -->|"ON (~45ms)"| DET_NEURAL["Tier 1: GLiNER Neural SLM (152M)\n• Unanchored Names (Rahul Sharma)\n• Unanchored Cities (Bangalore, Kolkata)\n• Dynamic Compensation (INR 24 LPA)\n• Hospital Facilities"]:::guardrail
+
+        DET_FAST --> SANITIZE["Deduplication & Stop-Word Gate\n• Generic Noun Filter (GENERIC_NOUN_STOP)\n• Pharmacology Protection (0% False Positives)"]:::guardrail
+        DET_NEURAL --> SANITIZE
+
+        SANITIZE --> ACTION_ROUTER{"Enforcement\nAction Mode"}:::guardrail
+        ACTION_ROUTER -->|"REDACT"| MASK_TOKEN["Reversible Vault Masking\n[REDACTED_TYPE] / [TOKEN_ID]"]:::vault
+        ACTION_ROUTER -->|"BLOCK"| REJECT["HTTP 400 Compliance Rejection\n(Request Terminated at Edge)"]:::guardrail
+        ACTION_ROUTER -->|"HASH"| HASH_TOKEN["HMAC-SHA256 Tokenization\n[HASH:8a7b9c1d]"]:::vault
+        ACTION_ROUTER -->|"LOG_ONLY"| PASS_AUDIT["Zero-Touch Pass-Through\n(Telemetry Audited)"]:::guardrail
+    end
+
+    MASK_TOKEN --> ORCHESTRATION
+    HASH_TOKEN --> ORCHESTRATION
+    PASS_AUDIT --> ORCHESTRATION
+
+    subgraph ORCHESTRATION["3. Agentic Runtime & Execution"]
+        subgraph SINGLE_AGENT["Single Agent Workflow"]
+            SA["Autonomous Agent Instance\n(ReAct / Tool-Use Loop)"]:::agent
+            SA_MEM["Agent Working Memory & State\n(Sanitized Tokens Protected)"]:::agent
+            SA <--> SA_MEM
+        end
+
+        subgraph MULTI_AGENT["Multi-Agent Swarm Orchestration"]
+            SUPERVISOR["Supervisor / Orchestrator Agent"]:::agent
+            CROSS_GUARD{"Inter-Agent Guardrail\n(Cross-Agent PII Firewall)"}:::guardrail
+            W1["Clinical Specialist Agent"]:::agent
+            W2["Billing / Finance Agent"]:::agent
+            W3["External Search Agent"]:::agent
+
+            SUPERVISOR -->|"Task Delegation"| CROSS_GUARD
+            CROSS_GUARD --> W1
+            CROSS_GUARD --> W2
+            CROSS_GUARD --> W3
+            W1 --> CROSS_GUARD
+            W2 --> CROSS_GUARD
+            W3 --> CROSS_GUARD
+            CROSS_GUARD --> SUPERVISOR
+        end
+    end
+
+    subgraph TOOL_CALL_GUARDRAIL["4. Dual-Sided Tool Call Guardrail"]
+        SA -->|"Function Call"| TOOL_INSPECT{"Pre-Invocation Tool Guardrail\n(Inspect Parameters)"}:::tool
+        W1 -->|"Tool Call"| TOOL_INSPECT
+        W2 -->|"Tool Call"| TOOL_INSPECT
+        W3 -->|"Tool Call"| TOOL_INSPECT
+
+        TOOL_INSPECT -->|"Sanitized Args"| TOOL_EXEC["Execute External Tool / Sandbox\n(DB Query, REST API, Bash)"]:::tool
+        TOOL_EXEC -->|"Raw Return"| TOOL_EGRESS{"Post-Execution Output Guardrail\n(DB/API Result Scrubbing)"}:::tool
+        TOOL_EGRESS -->|"Safe Payload"| SA
+        TOOL_EGRESS -->|"Safe Payload"| SUPERVISOR
+    end
+
+    ORCHESTRATION --> UPSTREAM_LLMS["5. Upstream Foundation Models\n(OpenAI GPT-4o, Gemini 2.0, Claude 3.5, Ollama)"]:::llm
+
+    subgraph EGRESS_GUARDRAIL["6. Egress Guardrail & Vault Reconstitution"]
+        UPSTREAM_LLMS -->|"Raw Completion"| EGRESS_INSPECT["Egress Leak & Hallucination Inspector\n• Scans for Raw PII Leaks\n• Detects Reverse-Prompt Injection"]:::guardrail
+        EGRESS_INSPECT --> VAULT_LOOKUP{"Deanonymization\nAuthorized?"}:::vault
+        VAULT_LOOKUP -->|"Yes"| RECONSTITUTE["Session Vault Deanonymization\n([TOKEN_NAME_1] ──► Real Patient Name)"]:::vault
+        VAULT_LOOKUP -->|"No"| SAFE_STREAM["Deliver Masked Response As-Is"]:::vault
+        RECONSTITUTE --> FINAL_RESP["Final Governed Response to Client"]:::client
+        SAFE_STREAM --> FINAL_RESP
+    end
+
+    subgraph GOVERNANCE["7. Continuous Trust & Governance Analytics"]
+        SANITIZE -.-> AUDIT_DB[("PostgreSQL / SQLite Audit Store")]:::vault
+        TOOL_INSPECT -.-> AUDIT_DB
+        EGRESS_INSPECT -.-> AUDIT_DB
+        AUDIT_DB --> TRUST_ENGINE["Dynamic Authority-Trust Scoring\n• Score: 0–100 Scale | Tier 1–4 Tiers\n• Streak Bonuses & Breach Penalties"]:::guardrail
+        TRUST_ENGINE --> DASHBOARD["Real-Time Security Dashboard"]:::client
+    end`,
+
+      // 2. INGRESS COMPLIANCE & DETECTION PIPELINE
+      `flowchart LR
+    classDef in fill:#090d1a,stroke:#00f2fe,stroke-width:2px,color:#f8fafc;
+    classDef t0 fill:#0c1327,stroke:#38bdf8,stroke-width:2px,color:#f8fafc;
+    classDef t1 fill:#151030,stroke:#a855f7,stroke-width:2px,color:#f8fafc;
+    classDef gate fill:#1c1917,stroke:#ec4899,stroke-width:2px,color:#f8fafc;
+    classDef out fill:#0a192f,stroke:#10b981,stroke-width:2px,color:#f8fafc;
+
+    RAW["Inbound Prompt Payload\n(Natural Language / Tool Args)"]:::in
+
+    subgraph DETERMINISTIC["Tier 0: Deterministic Matchers (<0.5ms Latency)"]
+        direction TB
+        HIPAA_D["HIPAA Safe Harbor Matchers:\n• SSN (9-digit strict regex)\n• Medical Record Number (MRN)\n• Health Beneficiary ID (HICN / Member ID)\n• Clinical Dates (Admitted, Discharged, DOB)\n• Provider Names with Title Anchors (Dr., Nurse)"]:::t0
+        DPDP_D["DPDP Act 2023 Matchers:\n• Aadhaar (12-digit UID + Verhoeff Checksum)\n• PAN (5 Letter + 4 Digit + 1 Letter Check)\n• UPI Handles (@okaxis, @okhdfcbank, @paytm)\n• Indian Mobile (+91 / 10-digit [6-9])\n• Indian PIN Codes (6 digits)"]:::t0
+        SHARED_D["Shared Core Matchers:\n• Credit Cards (Luhn Algorithm)\n• Bank Accounts & IBAN\n• IPv4 / IPv6 / MAC Addresses / UUIDs\n• RFC 5322 Emails"]:::t0
+    end
+
+    subgraph NEURAL["Tier 1: GLiNER Neural SLM (~45ms Latency)"]
+        direction TB
+        GLINER_CORE["urchade/gliner_small-v2.1 (152M params)\nDeBERTa-v3 Bidirectional Backbone"]:::t1
+        GLINER_ENTS["Zero-Shot Entity Classes:\n• 'person name' (Unanchored Names)\n• 'city' & 'street address'\n• 'hospital' & Facilities\n• 'salary' (INR 24 LPA, ₹18.5 LPA)\n• 'student roll number'"]:::t1
+        GLINER_CORE --> GLINER_ENTS
+    end
+
+    RAW --> HIPAA_D
+    RAW --> DPDP_D
+    RAW --> SHARED_D
+    RAW --> GLINER_CORE
+
+    subgraph PRECISION_GATE["Precision Filtering & Conflict Resolution"]
+        direction TB
+        STOP_FILTER["GENERIC_NOUN_STOP Suppression Gate\n(Discards 'patient', 'doctor', 'candidate',\n'taxpayer', 'bank counter', 'office')"]:::gate
+        DRUG_WHITELIST["Biomedical Pharmacology Whitelist\n(Preserves 'Tamoxifen', 'Metoprolol', 'Lisinopril')"]:::gate
+        SPAN_RESOLVE["Span Deduplication & Overlap Resolution\n(Chronological Offset Sort & Highest Confidence Winner)"]:::gate
+    end
+
+    HIPAA_D --> SPAN_RESOLVE
+    DPDP_D --> SPAN_RESOLVE
+    SHARED_D --> SPAN_RESOLVE
+    GLINER_ENTS --> STOP_FILTER
+    STOP_FILTER --> DRUG_WHITELIST
+    DRUG_WHITELIST --> SPAN_RESOLVE
+
+    SPAN_RESOLVE --> RESULTS["Standardized PIIMatch Collection\n(Entity Type, Start/End Offsets, Confidence, Framework)"]:::out`,
+
+      // 3. TOOL CALL GUARDRAIL
+      `sequenceDiagram
+    autonumber
+    participant Agent as Autonomous Agent Instance
+    participant IngressGuard as Pre-Execution Tool Guardrail
+    participant Vault as PIISessionVault
+    participant ExternalTool as Tool Sandbox (API / SQL / Python)
+    participant EgressGuard as Post-Execution Tool Guardrail
+    participant UpstreamLLM as Target LLM
+
+    Note over Agent: Agent generates tool call plan
+    Agent->>IngressGuard: Function Call: query_patient_ehr(patient_name="Sarah Connor", ssn="987-65-4320")
+    Note over IngressGuard: Pre-Invocation Parameter Inspection
+    IngressGuard->>IngressGuard: Detects PII: Name ("Sarah Connor") & SSN ("987-65-4320")
+    IngressGuard->>Vault: Registers Token Mapping:\n[TOKEN_NAME_1] ↔ "Sarah Connor"\n[TOKEN_SSN_1] ↔ "987-65-4320"
+    IngressGuard->>ExternalTool: Invokes Tool with Safe Tokens: query_patient_ehr(patient_name="[TOKEN_NAME_1]", ssn="[TOKEN_SSN_1]")
+    ExternalTool-->>EgressGuard: Raw Tool Return: {diagnosis: "Cardiology", balance: "₹45,000", pan: "ABCDE1234F"}
+    Note over EgressGuard: Post-Invocation Output Inspection
+    EgressGuard->>EgressGuard: Detects Unmasked Data: PAN ("ABCDE1234F")
+    EgressGuard->>Vault: Registers PAN Token: [TOKEN_PAN_1] ↔ "ABCDE1234F"
+    EgressGuard-->>Agent: Returns Sanitized Payload: {diagnosis: "Cardiology", balance: "₹45,000", pan: "[REDACTED_PAN]"}
+    Note over Agent: Agent processes clean output
+    Agent->>UpstreamLLM: Next ReAct Reasoning Step with Sanitized Context
+    UpstreamLLM-->>Agent: Final Response Synthesized: "Verified records for [TOKEN_NAME_1]."`,
+
+      // 4. SINGLE VS MULTI-AGENT ORCHESTRATION
+      `flowchart TD
+    classDef client fill:#090d1a,stroke:#00f2fe,stroke-width:2px,color:#f8fafc;
+    classDef guard fill:#151030,stroke:#a855f7,stroke-width:2px,color:#f8fafc;
+    classDef sup fill:#0c1327,stroke:#38bdf8,stroke-width:2px,color:#f8fafc;
+    classDef worker fill:#0a192f,stroke:#10b981,stroke-width:2px,color:#f8fafc;
+    classDef tool fill:#1f1625,stroke:#f59e0b,stroke-width:2px,color:#f8fafc;
+
+    USER["User Request / Multi-Step Goal"]:::client --> IN_GUARD["GuardIAn Ingress Guardrail"]:::guard
+
+    subgraph SUPERVISOR_PLANE["1. Orchestrator / Supervisor Plane"]
+        IN_GUARD --> SUP["Supervisor / Planner Agent"]:::sup
+        S_MEM[("Shared Memory & Scratchpad\n(Encrypted Vault Tokens Only)")]:::sup
+        SUP <--> S_MEM
+    end
+
+    subgraph INTER_AGENT_FIREWALL["2. Inter-Agent Guardrail Firewall"]
+        FW1{"Clinical Agent Firewall\n(Blocks Financial PII Leaks)"}:::guard
+        FW2{"Financial Agent Firewall\n(Blocks Health Records / PHI)"}:::guard
+        FW3{"External Search Firewall\n(Zero PII Egress to Open Web)"}:::guard
+    end
+
+    SUP -->|"Delegate Clinical Subtask"| FW1
+    SUP -->|"Delegate Billing Subtask"| FW2
+    SUP -->|"Delegate Web Research"| FW3
+
+    subgraph WORKER_PLANE["3. Specialized Worker Agents"]
+        subgraph CLINICAL_WORKER["Clinical Worker"]
+            FW1 --> W_CLINICAL["Clinical Diagnostic Agent"]:::worker
+            W_CLINICAL --> T_EHR["Hospital EHR Query Tool"]:::tool
+            T_EHR --> W_CLINICAL
+        end
+
+        subgraph FINANCIAL_WORKER["Financial Worker"]
+            FW2 --> W_FINANCE["Payroll & Invoicing Agent"]:::worker
+            W_FINANCE --> T_BANK["Banking / UPI Gateway API"]:::tool
+            T_BANK --> W_FINANCE
+        end
+
+        subgraph WEB_WORKER["Web Search Worker"]
+            FW3 --> W_WEB["Internet Search Agent"]:::worker
+            W_WEB --> T_SEARCH["Google / Bing Search API"]:::tool
+            T_SEARCH --> W_WEB
+        end
+    end
+
+    W_CLINICAL -->|"Filtered Medical Findings"| FW1
+    W_FINANCE -->|"Filtered Financial Status"| FW2
+    W_WEB -->|"Public Reference Documents"| FW3
+
+    FW1 -->|"Aggregated Finding"| SUP
+    FW2 -->|"Aggregated Finding"| SUP
+    FW3 -->|"Aggregated Finding"| SUP
+
+    SUP --> OUT_GUARD["Egress Guardrail & Deanonymizer"]:::guard
+    OUT_GUARD --> FINAL_CLIENT["Final Clean Answer Delivered to User"]:::client`
+    ];
+
+    const titles = [
+      "🌐 1. Master System & Ecosystem Architecture",
+      "🏥 2. Ingress Compliance & Hybrid Neural Detection Pipeline",
+      "🛠️ 3. Dual-Sided Tool Call & Function Guardrails",
+      "🤖 4. Single-Agent vs. Multi-Agent Swarm Orchestration"
+    ];
+
+    let currentDiagramIdx = 0;
+    let panZoomInstance = null;
+
+    function renderDiagram(idx) {
+      const container = document.getElementById('mermaid-target');
+      container.innerHTML = '<div class="mermaid">' + diagrams[idx] + '</div>';
+      document.getElementById('diagram-title').innerHTML = titles[idx];
+
+      if (panZoomInstance) {
+        panZoomInstance.destroy();
+        panZoomInstance = null;
+      }
+
+      mermaid.run({
+        nodes: [container.querySelector('.mermaid')]
+      }).then(() => {
+        const svg = container.querySelector('svg');
+        if (svg) {
+          svg.style.width = '100%';
+          svg.style.height = '100%';
+          panZoomInstance = svgPanZoom(svg, {
+            zoomEnabled: true,
+            controlIconsEnabled: false,
+            fit: true,
+            center: true,
+            minZoom: 0.4,
+            maxZoom: 5.0
+          });
+        }
+      });
+    }
+
+    function switchDiagram(idx) {
+      currentDiagramIdx = idx;
+      document.querySelectorAll('.tab-btn').forEach((btn, i) => {
+        btn.classList.toggle('active', i === idx);
+      });
+      renderDiagram(idx);
+    }
+
+    function zoomIn() {
+      if (panZoomInstance) panZoomInstance.zoomIn();
+    }
+
+    function zoomOut() {
+      if (panZoomInstance) panZoomInstance.zoomOut();
+    }
+
+    function resetZoom() {
+      if (panZoomInstance) {
+        panZoomInstance.resetZoom();
+        panZoomInstance.center();
+      }
+    }
+
+    function toggleFullscreen() {
+      const card = document.querySelector('.diagram-card');
+      if (!document.fullscreenElement) {
+        card.requestFullscreen().catch(err => alert(err.message));
+      } else {
+        document.exitFullscreen();
+      }
+    }
+
+    // Initial render
+    window.addEventListener('DOMContentLoaded', () => {
+      renderDiagram(0);
+    });
+  </script>
+</body>
+</html>
