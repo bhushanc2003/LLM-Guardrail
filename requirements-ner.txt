@@ -1,0 +1,5 @@
+# Optional NER pass (names / places). Local only: too large for the Vercel function, so not in requirements.txt.
+# Install:  pip install -r requirements-ner.txt && python -m spacy download en_core_web_sm
+# Enable:   ENABLE_PRESIDIO=true in .env
+presidio-analyzer
+spacy

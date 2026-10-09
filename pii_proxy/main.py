@@ -18,10 +18,24 @@ from pii_proxy.pii_detector import PIIDetector
 from pii_proxy.anonymizer import PIIAnonymizer, PIISessionVault
 from pii_proxy.audit import audit_logger
 from pii_proxy.auth import get_claims, get_current_user, require_admin, assert_owner_or_admin
-from pii_proxy.context import identity_from_request
-from pii_proxy.db import init_db, SessionLocal, DBUser, DBSession, DBAgent, DBEvent, DBPIIFinding, DBCategory
+from pii_proxy.context import identity_from_request, Identity
+from pii_proxy.db import init_db, SessionLocal, DBUser, DBSession, DBAgent, DBEvent, DBPIIFinding, DBCategory, DBScoreLedger
+from pii_proxy.authority import (
+    user_session_scores,
+    evaluate_verdict,
+    get_agent_score,
+    penalize_agent,
+    authorize_tool_call,
+    verify_and_reward_tool_result,
+    check_session_verdict
+)
 
 app = FastAPI(title="PII Data Anonymization Governance Proxy Platform", version="2.0.0")
+
+# GuardRailBench calls these five endpoints directly (its own protocol, separate
+# from our /v1/chat/completions proxy). Served on the same port as everything else.
+from pii_proxy.hooks_server import router as guardrailbench_hooks_router
+app.include_router(guardrailbench_hooks_router)
 
 # Enable CORS for React Frontend (Vite) & all origins
 app.add_middleware(
@@ -139,7 +153,7 @@ def _sessions_summary(db, user_uuid: Optional[str] = None, limit: int = 50) -> L
             DBUser.user_uuid,
             DBUser.email,
             func.count(DBEvent.id).label("requests"),
-            func.count(DBEvent.id).filter(DBEvent.decision.in_(["redact", "block"])).label("violations"),
+            func.count(DBEvent.id).filter(DBEvent.decision.in_(["redact", "block", "deny"])).label("violations"),
             func.coalesce(func.sum(DBEvent.prompt_tokens), 0).label("prompt_tokens"),
             func.coalesce(func.sum(DBEvent.completion_tokens), 0).label("completion_tokens"),
         )
@@ -295,14 +309,15 @@ async def admin_activity(limit: int = 50, violations_only: bool = False, admin: 
     db = SessionLocal()
     try:
         q = (
-            db.query(DBEvent, DBUser, DBSession.external_id)
+            db.query(DBEvent, DBUser, DBSession.external_id, DBAgent.agent_name)
             .join(DBSession, DBSession.id == DBEvent.session_id)
             .join(DBUser, DBUser.id == DBSession.user_id)
+            .outerjoin(DBAgent, DBAgent.id == DBEvent.agent_id)
         )
         if violations_only:
-            q = q.filter(DBEvent.decision.in_(["redact", "block"]))
+            q = q.filter(DBEvent.decision.in_(["redact", "block", "deny"]))
         rows = q.order_by(DBEvent.created_at.desc()).limit(limit).all()
-        event_ids = [e.id for e, _, _ in rows]
+        event_ids = [e.id for e, _, _, _ in rows]
         cats: Dict[str, set] = {}
         if event_ids:
             for event_id, cat_name in (
@@ -321,6 +336,9 @@ async def admin_activity(limit: int = 50, violations_only: bool = False, admin: 
                 "user_email": u.email,
                 "user_uuid": u.user_uuid,
                 "decision": e.decision,
+                "kind": e.kind,
+                "tool_name": e.tool_name,
+                "agent_name": agent_name,
                 "original_text": e.original_text,
                 "prompt_tokens": e.prompt_tokens,
                 "completion_tokens": e.completion_tokens,
@@ -330,7 +348,7 @@ async def admin_activity(limit: int = 50, violations_only: bool = False, admin: 
                 "anonymized_prompt": e.anonymized_text,
                 "latency_ms": e.latency_ms,
             }
-            for e, u, ext in rows
+            for e, u, ext, agent_name in rows
         ]
     finally:
         db.close()
@@ -401,6 +419,25 @@ async def set_user_compliance(user_uuid: str, req: UserComplianceRequest, user: 
     finally:
         db.close()
 
+def _event_label(e, agent, names, seen_prompt) -> str:
+    """Human label for what this event is: user request, agent response, tool call, tool result ..."""
+    tool = f" · {e.tool_name}" if e.tool_name else ""
+    if e.kind == "prompt":
+        key = e.agent_id
+        first = key not in seen_prompt
+        seen_prompt.add(key)
+        if first:
+            parent = names.get(agent.parent_agent_id) if agent and agent.parent_agent_id else None
+            return f"Task from {parent}" if parent else "User request"
+        return "Input (tool / agent result)"
+    return {
+        "completion": "Agent response",
+        "tool_call": f"Tool call{tool}",
+        "tool_result": f"Tool result{tool}",
+        "final_output": "Session summary",
+    }.get(e.kind, e.kind or "")
+
+
 def _event_row(e, findings, session_ext, agent_name, owner_uuid):
     decision = e.decision
     cats = sorted({cat for _, cat, _ in findings})
@@ -418,6 +455,8 @@ def _event_row(e, findings, session_ext, agent_name, owner_uuid):
         "session_external_id": session_ext,
         "user_uuid": owner_uuid,
         "agent_name": agent_name,
+        "kind": e.kind,
+        "tool_name": e.tool_name,
         "created_at": e.created_at.isoformat() if e.created_at else None,
         "model": e.model,
         "action_mode": e.action_mode,
@@ -477,9 +516,90 @@ async def get_event(event_id: str, user: DBUser = Depends(get_current_user)):
         e, session_row, owner, agent = row
         assert_owner_or_admin(user, owner.user_uuid)
         findings = _findings_for(db, [e.id]).get(e.id, [])
-        return _event_row(e, findings, session_row.external_id, agent.agent_name if agent else None, owner.user_uuid)
+        out = _event_row(e, findings, session_row.external_id, agent.agent_name if agent else None, owner.user_uuid)
+        names = {a.id: a.agent_name for a in db.query(DBAgent).filter(DBAgent.session_id == e.session_id).all()}
+        earlier_prompt = (
+            db.query(DBEvent.id)
+            .filter(DBEvent.session_id == e.session_id, DBEvent.agent_id == e.agent_id,
+                    DBEvent.kind == "prompt", DBEvent.created_at < e.created_at)
+            .first()
+        )
+        out["label"] = _event_label(e, agent, names, {e.agent_id} if earlier_prompt else set())
+        return out
     finally:
         db.close()
+
+@app.get("/api/sessions/{session_id}/agent-scores")
+async def session_agents(session_id: str, user: DBUser = Depends(get_current_user)):
+    """Per-agent view of one session: score trend, effective score (delegation cap), denied calls, violations, verdict."""
+    db = SessionLocal()
+    try:
+        row = (
+            db.query(DBSession, DBUser)
+            .join(DBUser, DBUser.id == DBSession.user_id)
+            .filter(DBSession.id == session_id)
+            .first()
+        )
+        if row is None:
+            raise HTTPException(status_code=404, detail="session not found")
+        assert_owner_or_admin(user, row[1].user_uuid)
+
+        agents = db.query(DBAgent).filter(DBAgent.session_id == session_id).order_by(DBAgent.created_at.asc()).all()
+        ids = [a.id for a in agents]
+        ledger = (
+            db.query(DBScoreLedger).filter(DBScoreLedger.agent_id.in_(ids)).order_by(DBScoreLedger.created_at.asc()).all()
+            if ids else []
+        )
+        counts: Dict[str, Dict[str, int]] = {a.id: {"tool_calls": 0, "denied_calls": 0, "violations": 0, "events": 0} for a in agents}
+        for agent_id, kind, decision, n in (
+            db.query(DBEvent.agent_id, DBEvent.kind, DBEvent.decision, func.count(DBEvent.id))
+            .filter(DBEvent.session_id == session_id)
+            .group_by(DBEvent.agent_id, DBEvent.kind, DBEvent.decision)
+            .all()
+        ):
+            c = counts.get(agent_id)
+            if c is None:
+                continue
+            c["events"] += n
+            if kind != "final_output":
+                c["real"] = c.get("real", 0) + n
+            if kind == "tool_call":
+                c["tool_calls"] += n
+                if decision == "deny":
+                    c["denied_calls"] += n
+            if decision in ("redact", "block"):
+                c["violations"] += n
+
+        by_agent: Dict[str, List[Any]] = {a.id: [] for a in agents}
+        for l in ledger:
+            by_agent[l.agent_id].append(l)
+
+        # the bench reports session-end under a pseudo agent (e.g. multi_agent_graph); it is not an agent
+        agents = [a for a in agents if counts[a.id].get("real") or by_agent[a.id]]
+        out, own = [], {}
+        for a in agents:
+            score, trend = a.initial_score, [{"t": a.created_at.isoformat() if a.created_at else None, "score": a.initial_score, "delta": 0, "reason": "start"}]
+            for l in by_agent[a.id]:
+                score = max(0, min(a.ceiling, score + l.delta))
+                trend.append({"t": l.created_at.isoformat() if l.created_at else None, "score": score, "delta": l.delta, "reason": l.reason})
+            own[a.id] = score
+            out.append({"agent_id": a.id, "agent_name": a.agent_name, "parent_agent_id": a.parent_agent_id,
+                        "score": score, "trend": trend,
+                        **{k: v for k, v in counts[a.id].items() if k != "real"}})
+        by_id = {a.id: a for a in agents}
+        for item in out:  # delegation cap: effective = min(own, parent's effective)
+            eff, cur, seen = item["score"], by_id[item["agent_id"]], set()
+            while cur.parent_agent_id and cur.parent_agent_id in own and cur.parent_agent_id not in seen:
+                seen.add(cur.parent_agent_id)
+                eff = min(eff, own[cur.parent_agent_id])
+                cur = by_id[cur.parent_agent_id]
+            item["effective_score"] = eff
+            item["parent_agent_name"] = by_id[item["parent_agent_id"]].agent_name if item["parent_agent_id"] in by_id else None
+        ok, reason = evaluate_verdict({a.agent_name: own[a.id] for a in agents})
+        return {"verdict": {"allowed": ok, "reason": reason}, "agents": out}
+    finally:
+        db.close()
+
 
 @app.get("/api/sessions/{session_id}/events")
 async def session_events(session_id: str, user: DBUser = Depends(get_current_user)):
@@ -504,10 +624,14 @@ async def session_events(session_id: str, user: DBUser = Depends(get_current_use
             .all()
         )
         findings = _findings_for(db, [e.id for e, _ in events])
-        return [
-            _event_row(e, findings.get(e.id, []), session_row.external_id, a.agent_name if a else None, owner.user_uuid)
-            for e, a in events
-        ]
+        names = {a.id: a.agent_name for a in db.query(DBAgent).filter(DBAgent.session_id == session_id).all()}
+        seen_prompt = set()
+        out = []
+        for e, a in events:
+            row = _event_row(e, findings.get(e.id, []), session_row.external_id, a.agent_name if a else None, owner.user_uuid)
+            row["label"] = _event_label(e, a, names, seen_prompt)
+            out.append(row)
+        return out
     finally:
         db.close()
 
@@ -582,6 +706,24 @@ async def user_daily(user_uuid: str, days: int = 14, user: DBUser = Depends(get_
     finally:
         db.close()
 
+RATING_PRIOR_REQUESTS = 5  # virtual clean requests that smooth small samples
+
+
+@app.post("/api/admin/users/{user_uuid}/reset-rating")
+async def admin_reset_rating(user_uuid: str, admin: DBUser = Depends(require_admin)):
+    """Admin only. History is kept; the user's rating (violations, trust, effective use) counts from now."""
+    db = SessionLocal()
+    try:
+        target = db.query(DBUser).filter(DBUser.user_uuid == user_uuid).first()
+        if not target:
+            raise HTTPException(status_code=404, detail="User not found")
+        target.rating_reset_at = datetime.now(timezone.utc)
+        db.commit()
+        return {"user_uuid": user_uuid, "rating_reset_at": target.rating_reset_at.isoformat(), "reset_by": admin.email}
+    finally:
+        db.close()
+
+
 @app.get("/api/users/{user_uuid}/trust-analytics")
 async def get_user_trust_analytics(user_uuid: str, user: DBUser = Depends(get_current_user)):
     """
@@ -595,7 +737,10 @@ async def get_user_trust_analytics(user_uuid: str, user: DBUser = Depends(get_cu
         if not target_user:
             raise HTTPException(status_code=404, detail="User not found")
 
-        events = (
+        # Tokens are all-time. The rating (violations, trust, effective use) counts only data after
+        # the last admin reset, so history is kept but the rating can start over.
+        since = target_user.rating_reset_at
+        base = (
             db.query(
                 DBEvent.decision,
                 DBEvent.action_mode,
@@ -603,50 +748,61 @@ async def get_user_trust_analytics(user_uuid: str, user: DBUser = Depends(get_cu
                 DBEvent.completion_tokens,
                 DBEvent.pii_count,
                 DBEvent.model,
+                DBEvent.created_at,
             )
             .join(DBSession, DBSession.id == DBEvent.session_id)
             .join(DBUser, DBUser.id == DBSession.user_id)
             .filter(DBUser.user_uuid == user_uuid)
-            .all()
         )
+        all_events = base.all()
+        events = [e for e in all_events if since is None or (e.created_at and e.created_at >= since)]
 
-        total_requests = len(events)
-        prompt_tokens = sum(e.prompt_tokens or 0 for e in events)
-        completion_tokens = sum(e.completion_tokens or 0 for e in events)
+        prompt_tokens = sum(e.prompt_tokens or 0 for e in all_events)
+        completion_tokens = sum(e.completion_tokens or 0 for e in all_events)
         total_tokens = prompt_tokens + completion_tokens
 
+        # --- rating (all simple, transparent proxies) ---
+        total_requests = len(events)
         clean_requests = sum(1 for e in events if e.decision == "allow")
         redacted_requests = sum(1 for e in events if e.decision == "redact")
         blocked_requests = sum(1 for e in events if e.decision == "block")
-        total_violations = redacted_requests + blocked_requests
+        denied_requests = sum(1 for e in events if e.decision == "deny")
+        total_violations = redacted_requests + blocked_requests + denied_requests
 
+        window_tokens = sum((e.prompt_tokens or 0) + (e.completion_tokens or 0) for e in events)
         clean_tokens = sum((e.prompt_tokens or 0) + (e.completion_tokens or 0) for e in events if e.decision == "allow")
-        violation_tokens = total_tokens - clean_tokens
+        violation_tokens = window_tokens - clean_tokens
 
         violation_frequency_pct = round((total_violations / total_requests) * 100, 2) if total_requests else 0.0
-
-        if total_tokens > 0:
-            token_efficiency = (clean_tokens / total_tokens) * 100
-        else:
-            token_efficiency = 100.0 if total_requests == 0 else ((clean_requests / total_requests) * 100)
-
         compliance_rate = ((clean_requests / total_requests) * 100) if total_requests else 100.0
-        effective_use_score = round(0.6 * token_efficiency + 0.4 * compliance_rate, 1)
 
-        base_trust = 85.0
-        if target_user.role == "admin":
-            base_trust += 10.0
-        trust_penalty = (violation_frequency_pct * 0.6) + (blocked_requests * 4.0)
-        volume_credit = min(10.0, total_requests * 0.3)
-        authority_trust_score = round(max(5.0, min(100.0, base_trust - trust_penalty + volume_credit)), 1)
+        # Composite uses a smoothed, severity-weighted violation rate so one early event does not
+        # decide the rating: a redaction (guardrail handled it) counts half, a block or a denied tool
+        # call counts fully, and RATING_PRIOR_REQUESTS virtual clean requests are added to the history.
+        weighted_violations = 0.5 * redacted_requests + blocked_requests + denied_requests
+        smoothed_violation_pct = weighted_violations / (total_requests + RATING_PRIOR_REQUESTS) * 100
 
-        if authority_trust_score >= 88:
+        # effective use: share of tokens spent on requests that finished clean (n/a when no token data)
+        effective_use_score = round(clean_tokens / window_tokens * 100, 1) if window_tokens > 0 else None
+
+        # authority trust: average over recent sessions of the weakest agent's authority score
+        session_scores = user_session_scores(db, target_user.id, since=since, limit=20)
+        authority_trust_score = round(
+            sum(s["min_score"] for s in session_scores) / len(session_scores), 1
+        ) if session_scores else 100.0
+
+        parts = [(0.4, authority_trust_score), (0.3, 100 - smoothed_violation_pct)]
+        if effective_use_score is not None:
+            parts.append((0.3, effective_use_score))
+        composite_rating = round(sum(w * v for w, v in parts) / sum(w for w, _ in parts), 1)
+
+        if composite_rating >= 88:
             trust_tier = "Tier 1: High Authority (Zero Risk)"
             trust_color = "#10b981"
-        elif authority_trust_score >= 70:
+        elif composite_rating >= 70:
             trust_tier = "Tier 2: Trusted Operator"
             trust_color = "#00f2fe"
-        elif authority_trust_score >= 50:
+        elif composite_rating >= 50:
             trust_tier = "Tier 3: Moderate Trust (Monitored)"
             trust_color = "#f59e0b"
         else:
@@ -654,7 +810,7 @@ async def get_user_trust_analytics(user_uuid: str, user: DBUser = Depends(get_cu
             trust_color = "#f43f5e"
 
         model_usage = {}
-        for e in events:
+        for e in all_events:
             m = e.model or "default"
             t = (e.prompt_tokens or 0) + (e.completion_tokens or 0)
             model_usage[m] = model_usage.get(m, 0) + t
@@ -679,10 +835,15 @@ async def get_user_trust_analytics(user_uuid: str, user: DBUser = Depends(get_cu
                 "redacted_requests": redacted_requests,
                 "blocked_requests": blocked_requests,
                 "total_violations": total_violations,
+                "denied_requests": denied_requests,
                 "violation_frequency_pct": violation_frequency_pct,
                 "compliance_rate_pct": round(compliance_rate, 2),
                 "effective_use_score": effective_use_score,
                 "authority_trust_score": authority_trust_score,
+                "composite_rating": composite_rating,
+                "smoothed_violation_pct": round(smoothed_violation_pct, 2),
+                "rating_since": since.isoformat() if since else None,
+                "recent_sessions": session_scores[:10],
                 "trust_tier": trust_tier,
                 "trust_color": trust_color,
             }
@@ -694,6 +855,37 @@ async def get_user_trust_analytics(user_uuid: str, user: DBUser = Depends(get_cu
 async def get_stats(user_uuid: Optional[str] = None, user: DBUser = Depends(get_current_user)):
     assert_owner_or_admin(user, user_uuid)
     return audit_logger.get_stats(user_uuid=user_uuid)
+
+def _authorize_session(db, session_id: str, user: DBUser):
+    row = (
+        db.query(DBSession, DBUser).join(DBUser, DBUser.id == DBSession.user_id).filter(DBSession.id == session_id).first()
+    )
+    if row is None:
+        raise HTTPException(status_code=404, detail="session not found")
+    assert_owner_or_admin(user, row[1].user_uuid)
+
+
+@app.get("/api/sessions/{session_id}/receipts")
+async def session_receipts(session_id: str, user: DBUser = Depends(get_current_user)):
+    """Hash-chained audit receipts for one session, each with user -> session -> agent -> parent attribution."""
+    db = SessionLocal()
+    try:
+        _authorize_session(db, session_id, user)
+    finally:
+        db.close()
+    return audit_logger.export_session_receipts(session_id)
+
+
+@app.get("/api/sessions/{session_id}/receipts/verify")
+async def verify_session_receipts(session_id: str, user: DBUser = Depends(get_current_user)):
+    """Recompute the receipt chain from the stored events and report whether anything was altered."""
+    db = SessionLocal()
+    try:
+        _authorize_session(db, session_id, user)
+    finally:
+        db.close()
+    return audit_logger.verify_session(session_id)
+
 
 @app.get("/api/audit-receipts")
 async def get_audit_receipts(limit: int = 50, user_uuid: Optional[str] = None, user: DBUser = Depends(get_current_user)):
@@ -1530,3 +1722,424 @@ async def embeddings(request: Request, user_uuid: Optional[str] = "default_user"
     async with httpx.AsyncClient(timeout=60.0) as client:
         res = await client.post(upstream_url, json=req_body, headers=headers)
         return JSONResponse(status_code=res.status_code, content=res.json())
+
+
+# -------------------------------------------------------------
+# Governance Control Plane Endpoint (for LangGraph / Callbacks)
+# -------------------------------------------------------------
+
+class GovernanceEvaluateRequest(BaseModel):
+    user_id: Optional[str] = "default_user"
+    user_uuid: Optional[str] = None
+    session_id: str
+    agent_id: str = "default_agent"
+    parent_agent_id: Optional[str] = None
+    kind: str  # "prompt", "tool_call", "tool_result", "completion", "final_output"
+    tool_name: Optional[str] = None
+    payload: Optional[str] = ""
+    action_mode: Optional[str] = None
+    min_score: Optional[int] = None
+    meta: Optional[Dict[str, Any]] = None
+
+
+@app.post("/api/governance/evaluate")
+@app.post("/core/evaluate")
+@app.post("/v1/evaluate")
+@app.post("/proxy/{user_uuid}/api/governance/evaluate")
+@app.post("/proxy/{user_uuid}/core/evaluate")
+@app.post("/proxy/{user_uuid}/v1/evaluate")
+@app.post("/proxy/{user_uuid}/evaluate")
+async def governance_evaluate(
+    eval_req: GovernanceEvaluateRequest,
+    request: Request,
+    user_uuid: Optional[str] = None
+):
+    """
+    Unified Governance Evaluation Endpoint for LangGraph / Agents:
+    Intercepts User-to-Agent prompts, Agent-to-Tool calls, Tool-to-Agent results, and Agent-to-User completions.
+    """
+    start_time = time.time()
+    effective_user_uuid = user_uuid or eval_req.user_uuid or eval_req.user_id or "default_user"
+    effective_action_mode = eval_req.action_mode or _action_mode_for(request, effective_user_uuid)
+
+    session_id = eval_req.session_id
+    agent_id = eval_req.agent_id
+    parent_agent_id = eval_req.parent_agent_id
+    kind = eval_req.kind.lower()
+    tool_name = eval_req.tool_name or ""
+    payload = eval_req.payload or ""
+    meta = eval_req.meta or {}
+
+    db = SessionLocal()
+    try:
+        # 1. Resolve User
+        user = db.query(DBUser).filter(DBUser.user_uuid == effective_user_uuid).first()
+        if user is None:
+            user = DBUser(
+                email=f"{effective_user_uuid}@anonymous.local",
+                name=eval_req.user_id or effective_user_uuid,
+                user_uuid=effective_user_uuid
+            )
+            db.add(user)
+            db.flush()
+
+        # 2. Resolve Session
+        session = (
+            db.query(DBSession)
+            .filter(DBSession.user_id == user.id, DBSession.external_id == session_id)
+            .first()
+        )
+        if session is None:
+            session = DBSession(user_id=user.id, external_id=session_id)
+            db.add(session)
+            db.flush()
+        session.last_seen_at = datetime.utcnow()
+
+        # 3. Resolve Agent
+        agent = db.query(DBAgent).filter(DBAgent.session_id == session.id, DBAgent.agent_name == agent_id).first()
+        if agent is None:
+            parent_id = None
+            if parent_agent_id and parent_agent_id != agent_id:
+                parent_agent = db.query(DBAgent).filter(DBAgent.session_id == session.id, DBAgent.agent_name == parent_agent_id).first()
+                if parent_agent:
+                    parent_id = parent_agent.id
+            agent = DBAgent(session_id=session.id, agent_name=agent_id, parent_agent_id=parent_id)
+            db.add(agent)
+            db.flush()
+
+        vault = PIISessionVault()
+        current_score, ceiling = get_agent_score(db, agent.id)
+
+        # -------------------------------------------------------------
+        # Boundary 2: Agent -> Tool Call (Policy Gate Check)
+        # -------------------------------------------------------------
+        if kind == "tool_call":
+            auth_res = authorize_tool_call(
+                db=db,
+                session_id=session.id,
+                agent_id=agent.id,
+                tool_name=tool_name,
+                custom_threshold=eval_req.min_score
+            )
+
+            if not auth_res["allowed"]:
+                db.commit()
+                event_id = audit_logger.log_event(
+                    user_id=user.email,
+                    user_uuid=user.user_uuid,
+                    request_id=f"gate_deny_{uuid.uuid4().hex[:8]}",
+                    action_mode=effective_action_mode,
+                    matches=[],
+                    latency_ms=(time.time() - start_time) * 1000.0,
+                    endpoint="/api/governance/evaluate",
+                    kind="tool_call",
+                    tool_name=tool_name,
+                    decision="deny",
+                    original_prompt=payload,
+                    anonymized_prompt=auth_res["reason"],
+                    identity=Identity(session_external_id=session_id, agent_name=agent_id, parent_agent_name=parent_agent_id)
+                )
+                return {
+                    "allowed": False,
+                    "decision": "deny",
+                    "reason": auth_res["reason"],
+                    "payload": auth_res["reason"],
+                    "current_score": auth_res["current_score"],
+                    "required_score": auth_res["required_score"],
+                    "ceiling": auth_res["ceiling"],
+                    "receipt_id": event_id
+                }
+
+            # Authorized -> Check arguments for PII/compliance
+            anon_args, matches = anonymizer.process_text(payload, vault, mode=effective_action_mode)
+            if effective_action_mode == "BLOCK" and len(matches) > 0:
+                penalize_agent(db, agent.id, "compliance_block", f"PII in tool arguments for {tool_name}")
+                db.commit()
+                event_id = audit_logger.log_event(
+                    user_id=user.email,
+                    user_uuid=user.user_uuid,
+                    request_id=f"args_block_{uuid.uuid4().hex[:8]}",
+                    action_mode="BLOCK",
+                    matches=matches,
+                    latency_ms=(time.time() - start_time) * 1000.0,
+                    endpoint="/api/governance/evaluate",
+                    kind="tool_call",
+                    tool_name=tool_name,
+                    decision="block",
+                    original_prompt=payload,
+                    identity=Identity(session_external_id=session_id, agent_name=agent_id, parent_agent_name=parent_agent_id)
+                )
+                new_score, _ = get_agent_score(db, agent.id)
+                return {
+                    "allowed": False,
+                    "decision": "block",
+                    "reason": f"Compliance policy violation: tool arguments contain {len(matches)} PII items",
+                    "payload": f"BLOCKED by Governance: Compliance violation in tool arguments",
+                    "current_score": new_score,
+                    "receipt_id": event_id
+                }
+
+            db.commit()
+            event_id = audit_logger.log_event(
+                user_id=user.email,
+                user_uuid=user.user_uuid,
+                request_id=f"tool_call_{uuid.uuid4().hex[:8]}",
+                action_mode=effective_action_mode,
+                matches=matches,
+                latency_ms=(time.time() - start_time) * 1000.0,
+                endpoint="/api/governance/evaluate",
+                kind="tool_call",
+                tool_name=tool_name,
+                decision="allow",
+                original_prompt=payload,
+                anonymized_prompt=anon_args,
+                identity=Identity(session_external_id=session_id, agent_name=agent_id, parent_agent_name=parent_agent_id)
+            )
+            return {
+                "allowed": True,
+                "decision": "allow",
+                "reason": "Authorized and compliant",
+                "payload": anon_args,
+                "current_score": auth_res["current_score"],
+                "required_score": auth_res["required_score"],
+                "ceiling": auth_res["ceiling"],
+                "receipt_id": event_id
+            }
+
+        # -------------------------------------------------------------
+        # Boundary 3: Tool -> Agent Call (Verified Proof & Evidence Reward)
+        # -------------------------------------------------------------
+        elif kind == "tool_result":
+            anon_result, matches = anonymizer.process_text(payload, vault, mode=effective_action_mode)
+            clean_exec = not bool(meta.get("error"))
+            output_clean = (len(matches) == 0)
+
+            # 4-Point Verified Proof Check:
+            if clean_exec and output_clean:
+                reward_res = verify_and_reward_tool_result(
+                    db=db,
+                    agent_id=agent.id,
+                    pre_authorized=True,
+                    input_compliant=True,
+                    execution_clean=True,
+                    output_compliant=True
+                )
+                db.commit()
+                event_id = audit_logger.log_event(
+                    user_id=user.email,
+                    user_uuid=user.user_uuid,
+                    request_id=f"tool_res_{uuid.uuid4().hex[:8]}",
+                    action_mode=effective_action_mode,
+                    matches=[],
+                    latency_ms=(time.time() - start_time) * 1000.0,
+                    endpoint="/api/governance/evaluate",
+                    kind="tool_result",
+                    tool_name=tool_name,
+                    decision="allow",
+                    original_prompt=payload,
+                    anonymized_prompt=anon_result,
+                    identity=Identity(session_external_id=session_id, agent_name=agent_id, parent_agent_name=parent_agent_id)
+                )
+                return {
+                    "allowed": True,
+                    "decision": "allow",
+                    "verified_proof": True,
+                    "delta": reward_res["delta"],
+                    "payload": anon_result,
+                    "current_score": reward_res["current_score"],
+                    "ceiling": reward_res["ceiling"],
+                    "receipt_id": event_id
+                }
+            else:
+                if len(matches) > 0:
+                    penalize_agent(db, agent.id, "compliance_redaction", f"PII detected in output of tool {tool_name}")
+                db.commit()
+                new_score, _ = get_agent_score(db, agent.id)
+                event_id = audit_logger.log_event(
+                    user_id=user.email,
+                    user_uuid=user.user_uuid,
+                    request_id=f"tool_res_{uuid.uuid4().hex[:8]}",
+                    action_mode=effective_action_mode,
+                    matches=matches,
+                    latency_ms=(time.time() - start_time) * 1000.0,
+                    endpoint="/api/governance/evaluate",
+                    kind="tool_result",
+                    tool_name=tool_name,
+                    decision="redact" if len(matches) > 0 else "allow",
+                    original_prompt=payload,
+                    anonymized_prompt=anon_result,
+                    identity=Identity(session_external_id=session_id, agent_name=agent_id, parent_agent_name=parent_agent_id)
+                )
+                return {
+                    "allowed": True,
+                    "decision": "redact" if len(matches) > 0 else "allow",
+                    "verified_proof": False,
+                    "delta": 0,
+                    "payload": anon_result,
+                    "current_score": new_score,
+                    "ceiling": ceiling,
+                    "receipt_id": event_id
+                }
+
+        # -------------------------------------------------------------
+        # Boundary 1: User -> Agent Call (Inbound Prompt)
+        # -------------------------------------------------------------
+        elif kind == "prompt":
+            anon_prompt, matches = anonymizer.process_text(payload, vault, mode=effective_action_mode)
+            if effective_action_mode == "BLOCK" and len(matches) > 0:
+                penalize_agent(db, agent.id, "compliance_block", "Inbound prompt compliance violation")
+                db.commit()
+                new_score, _ = get_agent_score(db, agent.id)
+                event_id = audit_logger.log_event(
+                    user_id=user.email,
+                    user_uuid=user.user_uuid,
+                    request_id=f"prompt_block_{uuid.uuid4().hex[:8]}",
+                    action_mode="BLOCK",
+                    matches=matches,
+                    latency_ms=(time.time() - start_time) * 1000.0,
+                    endpoint="/api/governance/evaluate",
+                    kind="prompt",
+                    decision="block",
+                    original_prompt=payload,
+                    identity=Identity(session_external_id=session_id, agent_name=agent_id, parent_agent_name=parent_agent_id)
+                )
+                return {
+                    "allowed": False,
+                    "decision": "block",
+                    "reason": f"Compliance violation: Prompt contains {len(matches)} PII items",
+                    "payload": "[BLOCKED_POLICY_VIOLATION]",
+                    "current_score": new_score,
+                    "receipt_id": event_id
+                }
+
+            if len(matches) > 0 and effective_action_mode != "LOG_ONLY":
+                penalize_agent(db, agent.id, "compliance_redaction", "Prompt contained sensitive data")
+            db.commit()
+            new_score, _ = get_agent_score(db, agent.id)
+            event_id = audit_logger.log_event(
+                user_id=user.email,
+                user_uuid=user.user_uuid,
+                request_id=f"prompt_{uuid.uuid4().hex[:8]}",
+                action_mode=effective_action_mode,
+                matches=matches,
+                latency_ms=(time.time() - start_time) * 1000.0,
+                endpoint="/api/governance/evaluate",
+                kind="prompt",
+                decision="redact" if len(matches) > 0 else "allow",
+                original_prompt=payload,
+                anonymized_prompt=anon_prompt,
+                identity=Identity(session_external_id=session_id, agent_name=agent_id, parent_agent_name=parent_agent_id)
+            )
+            return {
+                "allowed": True,
+                "decision": "redact" if len(matches) > 0 else "allow",
+                "payload": anon_prompt,
+                "current_score": new_score,
+                "ceiling": ceiling,
+                "receipt_id": event_id
+            }
+
+        # -------------------------------------------------------------
+        # Boundary 4: Agent -> User Call (Outbound Response & Verdict)
+        # -------------------------------------------------------------
+        elif kind in ["completion", "final_output"]:
+            # Check session verdict (block if any agent score < 20)
+            is_valid, verdict_reason = check_session_verdict(db, session.id)
+            if not is_valid:
+                db.commit()
+                event_id = audit_logger.log_event(
+                    user_id=user.email,
+                    user_uuid=user.user_uuid,
+                    request_id=f"verdict_block_{uuid.uuid4().hex[:8]}",
+                    action_mode=effective_action_mode,
+                    matches=[],
+                    latency_ms=(time.time() - start_time) * 1000.0,
+                    endpoint="/api/governance/evaluate",
+                    kind="final_output",
+                    decision="block",
+                    original_prompt=payload,
+                    anonymized_prompt=verdict_reason,
+                    identity=Identity(session_external_id=session_id, agent_name=agent_id, parent_agent_name=parent_agent_id)
+                )
+                return {
+                    "allowed": False,
+                    "decision": "block",
+                    "reason": verdict_reason,
+                    "payload": f"OUTPUT BLOCKED BY GOVERNANCE: {verdict_reason}",
+                    "current_score": current_score,
+                    "receipt_id": event_id
+                }
+
+            anon_out, matches = anonymizer.process_text(payload, vault, mode=effective_action_mode)
+            db.commit()
+            event_id = audit_logger.log_event(
+                user_id=user.email,
+                user_uuid=user.user_uuid,
+                request_id=f"final_{uuid.uuid4().hex[:8]}",
+                action_mode=effective_action_mode,
+                matches=matches,
+                latency_ms=(time.time() - start_time) * 1000.0,
+                endpoint="/api/governance/evaluate",
+                kind="final_output",
+                decision="redact" if len(matches) > 0 else "allow",
+                original_prompt=payload,
+                anonymized_prompt=anon_out,
+                identity=Identity(session_external_id=session_id, agent_name=agent_id, parent_agent_name=parent_agent_id)
+            )
+            return {
+                "allowed": True,
+                "decision": "redact" if len(matches) > 0 else "allow",
+                "payload": anon_out,
+                "current_score": current_score,
+                "ceiling": ceiling,
+                "receipt_id": event_id
+            }
+
+        else:
+            db.commit()
+            return {"allowed": True, "decision": "allow", "payload": payload, "current_score": current_score}
+
+    finally:
+        db.close()
+
+
+@app.get("/api/governance/agents/{session_id}/{agent_name}/score")
+@app.get("/proxy/{user_uuid}/api/governance/agents/{session_id}/{agent_name}/score")
+async def get_governance_agent_score(session_id: str, agent_name: str, user_uuid: Optional[str] = None):
+    db = SessionLocal()
+    try:
+        session = db.query(DBSession).filter(DBSession.external_id == session_id).first()
+        if not session:
+            return {"session_id": session_id, "agent_name": agent_name, "score": 100, "ceiling": 100}
+        agent = db.query(DBAgent).filter(DBAgent.session_id == session.id, DBAgent.agent_name == agent_name).first()
+        if not agent:
+            return {"session_id": session_id, "agent_name": agent_name, "score": 100, "ceiling": 100}
+        score, ceiling = get_agent_score(db, agent.id)
+        return {
+            "session_id": session_id,
+            "agent_id": agent.id,
+            "agent_name": agent_name,
+            "score": score,
+            "ceiling": ceiling
+        }
+    finally:
+        db.close()
+
+
+@app.get("/api/governance/verdict/{session_id}")
+@app.get("/proxy/{user_uuid}/api/governance/verdict/{session_id}")
+async def get_governance_session_verdict(session_id: str, user_uuid: Optional[str] = None):
+    db = SessionLocal()
+    try:
+        session = db.query(DBSession).filter(DBSession.external_id == session_id).first()
+        if not session:
+            return {"session_id": session_id, "compliant": True, "verdict": "Session not found"}
+        is_compliant, verdict = check_session_verdict(db, session.id)
+        return {
+            "session_id": session_id,
+            "compliant": is_compliant,
+            "verdict": verdict
+        }
+    finally:
+        db.close()
+

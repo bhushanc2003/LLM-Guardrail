@@ -245,6 +245,9 @@ function Preview({ text }) {
 
 export function RequestTable({ rows, onOpen, onOpenSession, showUser = false, empty = 'No requests yet.' }) {
   if (!rows || rows.length === 0) return <Empty>{empty}</Empty>;
+  const KIND_LABEL = { prompt: 'Prompt', completion: 'Agent response', tool_call: 'Tool call', tool_result: 'Tool result', final_output: 'Session summary' };
+  const KIND_COLOR = { prompt: '#38bdf8', completion: '#a78bfa', tool_call: '#f59e0b', tool_result: '#34d399', final_output: '#94a3b8' };
+  const hasKinds = rows.some(r => r.kind && r.kind !== 'prompt');
   return (
     <table style={{ width: '100%', borderCollapse: 'collapse' }}>
       <thead>
@@ -254,9 +257,10 @@ export function RequestTable({ rows, onOpen, onOpenSession, showUser = false, em
           {onOpenSession && <th style={th}>Session</th>}
           <th style={th}>Decision</th>
           <th style={th}>Categories</th>
-          <th style={th}>Prompt</th>
+          <th style={th}>Content</th>
           <th style={{ ...th, textAlign: 'right' }}>Tokens (In / Out)</th>
           <th style={{ ...th, textAlign: 'right' }}>Latency</th>
+          {hasKinds && <th style={th}>Type</th>}
         </tr>
       </thead>
       <tbody>
@@ -308,6 +312,14 @@ export function RequestTable({ rows, onOpen, onOpenSession, showUser = false, em
                 ) : '—'}
               </td>
               <td style={{ ...td, textAlign: 'right', color: '#38bdf8', fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>{r.latency_ms != null ? `${Math.round(r.latency_ms)} ms` : '—'}</td>
+              {hasKinds && (
+                <td style={td}>
+                  <span style={{ color: KIND_COLOR[r.kind] || C.muted, fontSize: '0.78rem', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                    {r.label || KIND_LABEL[r.kind] || r.kind || '—'}
+                    {!r.label && r.tool_name ? ` · ${r.tool_name}` : ''}
+                  </span>
+                </td>
+              )}
             </tr>
           );
         })}
@@ -374,6 +386,9 @@ export function RequestDetail({ eventId, authedFetch, onBack }) {
       <div style={{ display: 'flex', gap: '14px', alignItems: 'center', flexWrap: 'wrap', marginBottom: '14px' }}>
         <DecisionChip decision={e.decision} />
         <span style={{ color: C.muted, fontSize: '0.88rem' }}>{e.created_at ? new Date(e.created_at).toLocaleString() : ''}</span>
+        {e.label && <span style={{ fontSize: '0.8rem', fontWeight: 600, padding: '3px 10px', borderRadius: '6px', border: `1px solid ${C.border}`, color: '#e2e8f0' }}>{e.label}</span>}
+        {e.agent_name && <span style={{ fontSize: '0.8rem', fontFamily: mono, padding: '3px 10px', borderRadius: '6px', border: `1px solid ${C.border}`, color: C.accent }}>agent: {e.agent_name}</span>}
+        {e.tool_name && <span style={{ fontSize: '0.8rem', fontFamily: mono, padding: '3px 10px', borderRadius: '6px', border: `1px solid ${C.border}`, color: '#f59e0b' }}>tool: {e.tool_name}</span>}
       </div>
       {e.reason && (
         <div style={{
