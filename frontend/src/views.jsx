@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { C, Card, Kpi, DecisionChip, Empty, Loader, ScrollBox, LimitSelect, RequestTable, RequestDetail, ToggleSwitch, mono } from './ui.jsx';
 
 const inputStyle = {
@@ -1342,6 +1342,81 @@ async function resetRating(authedFetch, user, onDone) {
   else window.alert('Reset failed');
 }
 
+function CircularScoreRing({
+  value,
+  size = 62,
+  strokeWidth = 5.5,
+  color = '#00f2fe',
+  gradientEnd = null,
+  trackColor = 'rgba(255, 255, 255, 0.08)',
+  subtext = null,
+  glow = true,
+}) {
+  const radius = (size - strokeWidth) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const num = typeof value === 'number' ? value : parseFloat(value) || 0;
+  const clamped = Math.min(100, Math.max(0, num));
+  const offset = circumference - (clamped / 100) * circumference;
+  const gradId = useMemo(() => `circ-grad-${Math.random().toString(36).substring(2, 9)}`, []);
+
+  return (
+    <div style={{ position: 'relative', width: size, height: size, flex: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <svg width={size} height={size} style={{ transform: 'rotate(-90deg)', overflow: 'visible' }}>
+        {gradientEnd && (
+          <defs>
+            <linearGradient id={gradId} x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stopColor={color} />
+              <stop offset="100%" stopColor={gradientEnd} />
+            </linearGradient>
+          </defs>
+        )}
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          fill="transparent"
+          stroke={trackColor}
+          strokeWidth={strokeWidth}
+        />
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          fill="transparent"
+          stroke={gradientEnd ? `url(#${gradId})` : color}
+          strokeWidth={strokeWidth}
+          strokeDasharray={circumference}
+          strokeDashoffset={offset}
+          strokeLinecap="round"
+          style={{
+            transition: 'stroke-dashoffset 0.6s ease',
+            filter: glow ? `drop-shadow(0 0 6px ${color}44)` : 'none',
+          }}
+        />
+      </svg>
+      <div style={{
+        position: 'absolute',
+        inset: 0,
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        pointerEvents: 'none',
+      }}>
+        <span style={{
+          fontSize: size <= 62 ? '0.74rem' : '0.84rem',
+          fontWeight: 800,
+          fontFamily: mono,
+          color: color,
+          letterSpacing: '-0.02em',
+        }}>
+          {subtext !== null ? subtext : `${Math.round(clamped)}%`}
+        </span>
+      </div>
+    </div>
+  );
+}
+
 export function TrustAnalyticsView({ authedFetch, me, isAdmin, initialUuid }) {
   const [selectedUuid, setSelectedUuid] = useState(initialUuid || me?.user_uuid || '');
   const [data, setData] = useState(null);
@@ -1503,8 +1578,8 @@ export function TrustAnalyticsView({ authedFetch, me, isAdmin, initialUuid }) {
         <Loader text="Calculating token metrics & authority-trust matrix…" />
       ) : (
         <>
-          {/* Top 4 Cyber KPI Tiles */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '16px' }}>
+          {/* Top 4 Cyber KPI Tiles with Circular Score Rings */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '16px' }}>
             {/* 1. Authority-Trust Score */}
             <div style={{
               background: C.surface,
@@ -1520,31 +1595,33 @@ export function TrustAnalyticsView({ authedFetch, me, isAdmin, initialUuid }) {
               <div style={{ color: C.muted, fontSize: '0.8rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                 Overall Rating
               </div>
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', margin: '12px 0 8px 0' }}>
-                <span style={{ fontSize: '2.1rem', fontWeight: 800, color: trustColor, fontFamily: mono }}>
-                  {composite}
-                </span>
-                <span style={{ fontSize: '1rem', color: C.faint }}>/ 100</span>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', margin: '10px 0 12px 0' }}>
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
+                    <span style={{ fontSize: '2.1rem', fontWeight: 800, color: trustColor, fontFamily: mono }}>
+                      {composite}
+                    </span>
+                    <span style={{ fontSize: '0.95rem', color: C.faint }}>/ 100</span>
+                  </div>
+                  {/* Trust Tier Badge */}
+                  <div style={{
+                    display: 'inline-block',
+                    padding: '3px 10px',
+                    borderRadius: '8px',
+                    fontSize: '0.78rem',
+                    fontWeight: 700,
+                    color: trustColor,
+                    background: `${trustColor}18`,
+                    border: `1px solid ${trustColor}55`,
+                    marginTop: '6px',
+                  }}>
+                    {trustTier}
+                  </div>
+                </div>
+                {/* Circular Score Gauge */}
+                <CircularScoreRing value={composite} color={trustColor} gradientEnd="#a855f7" size={64} strokeWidth={5.5} />
               </div>
-              {/* Trust Tier Badge */}
-              <div style={{
-                display: 'inline-block',
-                padding: '3px 10px',
-                borderRadius: '8px',
-                fontSize: '0.78rem',
-                fontWeight: 700,
-                color: trustColor,
-                background: `${trustColor}18`,
-                border: `1px solid ${trustColor}55`,
-                marginBottom: '10px',
-              }}>
-                {trustTier}
-              </div>
-              {/* Score bar */}
-              <div style={{ width: '100%', height: '6px', borderRadius: '3px', background: 'rgba(255,255,255,0.08)', overflow: 'hidden' }}>
-                <div style={{ width: `${Math.min(100, Math.max(0, authorityTrust))}%`, height: '100%', background: `linear-gradient(90deg, #f43f5e, #f59e0b 50%, ${trustColor} 85%)` }} />
-              </div>
-              <div style={{ fontSize: '0.74rem', color: C.faint, marginTop: '8px' }}>
+              <div style={{ fontSize: '0.74rem', color: C.faint, marginTop: '4px' }}>
                 Authority-trust {authorityTrust} · violations {violationFreq}% · effective use {effectiveUse == null ? 'n/a' : `${effectiveUse}%`}
               </div>
             </div>
@@ -1560,26 +1637,32 @@ export function TrustAnalyticsView({ authedFetch, me, isAdmin, initialUuid }) {
               position: 'relative',
               overflow: 'hidden',
             }}>
-              <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '3px', background: 'linear-gradient(90deg, #f43f5e, #f59e0b)' }} />
+              <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '3px', background: 'linear-gradient(90deg, #fb7185, #f59e0b)' }} />
               <div style={{ color: C.muted, fontSize: '0.8rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                 Violation Frequency
               </div>
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', margin: '12px 0 8px 0' }}>
-                <span style={{ fontSize: '2.1rem', fontWeight: 800, color: totalViolations > 0 ? '#f43f5e' : '#10b981', fontFamily: mono }}>
-                  {violationFreq}%
-                </span>
-                <span style={{ fontSize: '0.85rem', color: C.faint }}>breach rate</span>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', margin: '10px 0 12px 0' }}>
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
+                    <span style={{ fontSize: '2.1rem', fontWeight: 800, color: totalViolations > 0 ? '#fb7185' : '#10b981', fontFamily: mono }}>
+                      {violationFreq}%
+                    </span>
+                    <span style={{ fontSize: '0.85rem', color: C.faint }}>breach rate</span>
+                  </div>
+                  <div style={{ fontSize: '0.8rem', color: '#cbd5e1', marginTop: '6px' }}>
+                    {totalViolations} violation{totalViolations === 1 ? '' : 's'} across {totalRequests} request{totalRequests === 1 ? '' : 's'}
+                  </div>
+                </div>
+                {/* Circular Violation Gauge */}
+                <CircularScoreRing
+                  value={violationFreq}
+                  color={totalViolations > 0 ? '#fb7185' : '#10b981'}
+                  gradientEnd={totalViolations > 0 ? '#f43f5e' : '#34d399'}
+                  size={64}
+                  strokeWidth={5.5}
+                />
               </div>
-              <div style={{ fontSize: '0.82rem', color: '#f8fafc', marginBottom: '8px' }}>
-                {totalViolations} violations across {totalRequests} requests
-              </div>
-              {/* Ratio bar */}
-              <div style={{ width: '100%', height: '6px', borderRadius: '3px', background: 'rgba(255,255,255,0.08)', overflow: 'hidden', display: 'flex' }}>
-                <div style={{ width: `${totalRequests > 0 ? (cleanRequests / totalRequests) * 100 : 100}%`, height: '100%', background: '#10b981' }} title={`Clean: ${cleanRequests}`} />
-                <div style={{ width: `${totalRequests > 0 ? (redactedRequests / totalRequests) * 100 : 0}%`, height: '100%', background: '#f59e0b' }} title={`Redacted: ${redactedRequests}`} />
-                <div style={{ width: `${totalRequests > 0 ? (blockedRequests / totalRequests) * 100 : 0}%`, height: '100%', background: '#f43f5e' }} title={`Blocked: ${blockedRequests}`} />
-              </div>
-              <div style={{ fontSize: '0.74rem', color: C.faint, marginTop: '8px' }}>
+              <div style={{ fontSize: '0.74rem', color: C.faint, marginTop: '4px' }}>
                 {cleanRequests} clean · {redactedRequests} redacted · {blockedRequests} blocked
               </div>
             </div>
@@ -1599,20 +1682,29 @@ export function TrustAnalyticsView({ authedFetch, me, isAdmin, initialUuid }) {
               <div style={{ color: C.muted, fontSize: '0.8rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                 Effective-Use Score
               </div>
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', margin: '12px 0 8px 0' }}>
-                <span style={{ fontSize: '2.1rem', fontWeight: 800, color: '#00f2fe', fontFamily: mono }}>
-                  {effectiveUse == null ? 'n/a' : `${effectiveUse}%`}
-                </span>
-                <span style={{ fontSize: '0.85rem', color: C.faint }}>efficiency</span>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', margin: '10px 0 12px 0' }}>
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
+                    <span style={{ fontSize: '2.1rem', fontWeight: 800, color: '#00f2fe', fontFamily: mono }}>
+                      {effectiveUse == null ? 'n/a' : `${effectiveUse}%`}
+                    </span>
+                    <span style={{ fontSize: '0.85rem', color: C.faint }}>efficiency</span>
+                  </div>
+                  <div style={{ fontSize: '0.8rem', color: '#cbd5e1', marginTop: '6px' }}>
+                    Clean token utility ratio
+                  </div>
+                </div>
+                {/* Circular Efficiency Gauge */}
+                <CircularScoreRing
+                  value={effectiveUse ?? 0}
+                  color="#00f2fe"
+                  gradientEnd="#10b981"
+                  subtext={effectiveUse == null ? 'n/a' : null}
+                  size={64}
+                  strokeWidth={5.5}
+                />
               </div>
-              <div style={{ fontSize: '0.82rem', color: '#f8fafc', marginBottom: '8px' }}>
-                Share of tokens spent on clean requests (n/a until token data exists)
-              </div>
-              {/* Effective bar */}
-              <div style={{ width: '100%', height: '6px', borderRadius: '3px', background: 'rgba(255,255,255,0.08)', overflow: 'hidden' }}>
-                <div style={{ width: `${Math.min(100, Math.max(0, effectiveUse ?? 0))}%`, height: '100%', background: 'linear-gradient(90deg, #38bdf8, #00f2fe)' }} />
-              </div>
-              <div style={{ fontSize: '0.74rem', color: C.faint, marginTop: '8px' }}>
+              <div style={{ fontSize: '0.74rem', color: C.faint, marginTop: '4px' }}>
                 Evaluates prompt utility vs breach remediation waste
               </div>
             </div>
@@ -1632,21 +1724,29 @@ export function TrustAnalyticsView({ authedFetch, me, isAdmin, initialUuid }) {
               <div style={{ color: C.muted, fontSize: '0.8rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                 Total Tokens Tracked
               </div>
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', margin: '12px 0 8px 0' }}>
-                <span style={{ fontSize: '2.1rem', fontWeight: 800, color: '#f8fafc', fontFamily: mono }}>
-                  {totalTokens.toLocaleString()}
-                </span>
-                <span style={{ fontSize: '0.85rem', color: C.faint }}>tokens</span>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', margin: '10px 0 12px 0' }}>
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
+                    <span style={{ fontSize: '2.1rem', fontWeight: 800, color: '#f8fafc', fontFamily: mono }}>
+                      {totalTokens.toLocaleString()}
+                    </span>
+                    <span style={{ fontSize: '0.85rem', color: C.faint }}>tokens</span>
+                  </div>
+                  <div style={{ fontSize: '0.8rem', color: '#cbd5e1', marginTop: '6px' }}>
+                    {promptTokens.toLocaleString()} in · {completionTokens.toLocaleString()} out
+                  </div>
+                </div>
+                {/* Circular Tokens Gauge */}
+                <CircularScoreRing
+                  value={promptPct}
+                  color="#38bdf8"
+                  gradientEnd="#a855f7"
+                  subtext={`${promptPct}%`}
+                  size={64}
+                  strokeWidth={5.5}
+                />
               </div>
-              <div style={{ fontSize: '0.82rem', color: '#f8fafc', marginBottom: '8px' }}>
-                {promptTokens.toLocaleString()} prompt · {completionTokens.toLocaleString()} completion
-              </div>
-              {/* Token split bar */}
-              <div style={{ width: '100%', height: '6px', borderRadius: '3px', background: 'rgba(255,255,255,0.08)', overflow: 'hidden', display: 'flex' }}>
-                <div style={{ width: `${promptPct}%`, height: '100%', background: '#00f2fe' }} title={`Prompt: ${promptTokens}`} />
-                <div style={{ width: `${complPct}%`, height: '100%', background: '#a855f7' }} title={`Completion: ${completionTokens}`} />
-              </div>
-              <div style={{ fontSize: '0.74rem', color: C.faint, marginTop: '8px' }}>
+              <div style={{ fontSize: '0.74rem', color: C.faint, marginTop: '4px' }}>
                 Avg {avgTokens} tokens per request across all sessions
               </div>
             </div>
@@ -1695,10 +1795,10 @@ export function TrustAnalyticsView({ authedFetch, me, isAdmin, initialUuid }) {
                   <div style={{
                     padding: '14px',
                     borderRadius: '10px',
-                    background: 'rgba(244, 63, 94, 0.08)',
-                    border: '1px solid rgba(244, 63, 94, 0.25)',
+                    background: 'rgba(251, 113, 133, 0.06)',
+                    border: '1px solid rgba(251, 113, 133, 0.22)',
                   }}>
-                    <div style={{ fontSize: '0.75rem', color: '#f43f5e', fontWeight: 600, textTransform: 'uppercase' }}>Remediated Tokens</div>
+                    <div style={{ fontSize: '0.75rem', color: '#fb7185', fontWeight: 600, textTransform: 'uppercase' }}>Remediated Tokens</div>
                     <div style={{ fontSize: '1.4rem', fontWeight: 800, color: '#f8fafc', fontFamily: mono, marginTop: '4px' }}>
                       {violationTokens.toLocaleString()}
                     </div>
@@ -1809,7 +1909,7 @@ export function TrustAnalyticsView({ authedFetch, me, isAdmin, initialUuid }) {
                   </div>
                   <div style={{ padding: '12px', background: 'rgba(6, 10, 24, 0.6)', border: `1px solid ${C.border}`, borderRadius: '8px' }}>
                     <div style={{ fontSize: '0.72rem', color: C.muted }}>INTERCEPTIONS</div>
-                    <div style={{ fontSize: '1.25rem', fontWeight: 800, color: totalViolations > 0 ? '#f43f5e' : '#10b981', fontFamily: mono, marginTop: '4px' }}>
+                    <div style={{ fontSize: '1.25rem', fontWeight: 800, color: totalViolations > 0 ? '#fb7185' : '#10b981', fontFamily: mono, marginTop: '4px' }}>
                       {totalViolations}
                     </div>
                   </div>
@@ -1833,7 +1933,7 @@ export function TrustAnalyticsView({ authedFetch, me, isAdmin, initialUuid }) {
                       <span>Tier 3: Moderate Trust (Monitored)</span>
                       <span style={{ fontFamily: mono, fontWeight: 700 }}>50 – 69</span>
                     </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 10px', borderRadius: '6px', background: authorityTrust < 50 ? 'rgba(244, 63, 94, 0.15)' : 'transparent', color: '#f43f5e' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 10px', borderRadius: '6px', background: authorityTrust < 50 ? 'rgba(251, 113, 133, 0.12)' : 'transparent', color: '#fb7185' }}>
                       <span>Tier 4: Restricted (High Risk)</span>
                       <span style={{ fontFamily: mono, fontWeight: 700 }}>&lt; 50</span>
                     </div>
