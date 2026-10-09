@@ -18,6 +18,30 @@ export default function Shell({ items, active, onNav, title, subtitle, userButto
     }
   });
 
+  const [theme, setTheme] = useState(() => {
+    try {
+      return localStorage.getItem('app_theme') || 'dark';
+    } catch (_) {
+      return 'dark';
+    }
+  });
+
+  const toggleTheme = () => {
+    const next = theme === 'dark' ? 'light' : 'dark';
+    setTheme(next);
+    try {
+      localStorage.setItem('app_theme', next);
+    } catch (_) {}
+    document.documentElement.setAttribute('data-theme', next);
+    if (next === 'light') {
+      document.body.style.backgroundColor = '#f1f5f9';
+      document.body.style.color = '#0f172a';
+    } else {
+      document.body.style.backgroundColor = '#060913';
+      document.body.style.color = '#f8fafc';
+    }
+  };
+
   const toggle = () => {
     setCollapsed(prev => {
       const next = !prev;
@@ -283,7 +307,30 @@ export default function Shell({ items, active, onNav, title, subtitle, userButto
               {subtitle && <div style={{ color: C.muted, fontSize: '0.82rem', marginTop: '2px', fontWeight: 500 }}>{subtitle}</div>}
             </div>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+            {/* Theme Toggle Button */}
+            <button
+              onClick={toggleTheme}
+              title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '6px 14px',
+                borderRadius: '10px',
+                background: theme === 'dark' ? 'rgba(255, 255, 255, 0.06)' : 'rgba(15, 23, 42, 0.05)',
+                border: theme === 'dark' ? '1px solid rgba(255, 255, 255, 0.12)' : '1px solid rgba(15, 23, 42, 0.12)',
+                color: theme === 'dark' ? '#f8fafc' : '#0f172a',
+                cursor: 'pointer',
+                fontSize: '0.84rem',
+                fontWeight: 600,
+                transition: 'all 0.18s ease',
+                backdropFilter: 'blur(12px)',
+              }}
+            >
+              <span style={{ fontSize: '1rem', lineHeight: 1 }}>{theme === 'dark' ? '🌙' : '☀️'}</span>
+              <span>{theme === 'dark' ? 'Dark' : 'Light'}</span>
+            </button>
             {userButton}
           </div>
         </header>
