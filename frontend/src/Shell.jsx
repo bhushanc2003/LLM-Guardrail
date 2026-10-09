@@ -295,7 +295,6 @@ export default function Shell({ items, active, onNav, title, subtitle, userButto
           display: 'grid',
           gap: '22px',
           alignContent: 'start',
-          maxWidth: '1440px',
           width: '100%',
           boxSizing: 'border-box',
         }}>
