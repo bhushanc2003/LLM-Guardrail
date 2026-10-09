@@ -217,10 +217,11 @@ function LandingPage() {
   const active = presets[activeTab];
 
   const copyCurl = () => {
-    navigator.clipboard.writeText(`curl -X POST https://api.adrishya.ai/v1/chat/completions \\
+    navigator.clipboard.writeText(`curl -X POST http://localhost:8000/v1/chat/completions \\
+  -H "Content-Type: application/json" \\
   -H "Authorization: Bearer YOUR_API_KEY" \\
   -H "X-Action-Mode: HASH" \\
-  -d '{"model":"gpt-4","messages":[{"role":"user","content":"Summarize chart for Patient Jane Doe (MRN-4820194)"}]}'`);
+  -d '{"model":"nvidia/Qwen3.6-35B-A3B-NVFP4","messages":[{"role":"user","content":"Summarize medical chart for Patient Jane Doe (DOB: 08/23/1984, MRN-4820194)"}]}'`);
     setCopied(true);
     setTimeout(() => setCopied(false), 2500);
   };
@@ -455,7 +456,7 @@ function LandingPage() {
             lineHeight: 1.65,
             fontWeight: 400,
           }}>
-            <strong style={{ color: '#f8fafc', fontWeight: 600 }}>Adrishya</strong> sits silently between your users and external AI models—intercepting, cryptographically hashing (<code style={{ color: '#00f2fe', fontFamily: mono }}>SHA-256</code>), and auditing prompts on <strong style={{ color: '#38bdf8' }}>ingress</strong> and <strong style={{ color: '#c084fc' }}>egress</strong> in &lt;2ms with zero cleartext data leakage.
+            <strong style={{ color: '#f8fafc', fontWeight: 600 }}>Adrishya</strong> is the invisible privacy layer for Generative AI. Intercept, cryptographically mask sensitive <strong style={{ color: '#00f2fe' }}>PII/PHI</strong>, and audit LLM prompts in real time with <strong style={{ color: '#10b981' }}>zero cleartext data leakage</strong>.
           </p>
 
           {/* CTA Buttons */}
@@ -502,43 +503,49 @@ function LandingPage() {
               className="glow-hover"
             >
               <Icons.Bolt size={18} color="#00f2fe" />
-              <span>Explore Live 3D Pipeline</span>
+              <span>Explore Live Flow</span>
             </button>
           </div>
         </div>
 
-        {/* Live Metrics Trust Strip */}
+        {/* Sleek Enterprise Trust & Compliance Ribbon (Clean, No Digits) */}
         <div style={{
-          maxWidth: '1000px',
-          margin: '60px auto 70px auto',
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
-          gap: '16px',
+          maxWidth: '1050px',
+          margin: '44px auto 56px auto',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: '12px',
         }}>
           {[
-            { metric: '0%', label: 'Cleartext Exposure', desc: 'Prompts hashed before reaching LLM', color: '#10b981', icon: <Icons.Lock size={22} color="#10b981" /> },
-            { metric: '< 2ms', label: 'Processing Latency', desc: 'Ultra-low overhead inline proxy', color: '#00f2fe', icon: <Icons.Bolt size={22} color="#00f2fe" /> },
-            { metric: '15 / 15', label: 'HIPAA Safe Harbor', desc: 'All 18 PHI identifier categories', color: '#a855f7', icon: <Icons.Pulse size={22} color="#a855f7" /> },
-            { metric: '27 / 27', label: 'India DPDP Act 2023', desc: 'Aadhaar, PAN, UPI, Voter ID, PIN', color: '#f59e0b', icon: <Icons.Card size={22} color="#f59e0b" /> },
-          ].map((item, idx) => (
-            <div key={idx} style={{
-              background: 'linear-gradient(135deg, rgba(15, 23, 42, 0.75) 0%, rgba(8, 13, 26, 0.85) 100%)',
-              backdropFilter: 'blur(16px)',
-              border: '1px solid rgba(255, 255, 255, 0.08)',
-              borderRadius: '16px',
-              padding: '20px',
-              textAlign: 'left',
-              boxShadow: '0 10px 30px rgba(0, 0, 0, 0.4)',
-              transition: 'all 0.25s ease',
-            }} className="glow-hover">
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                <div style={{ width: '38px', height: '38px', borderRadius: '10px', background: 'rgba(255, 255, 255, 0.05)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  {item.icon}
-                </div>
-                <span style={{ fontSize: '1.8rem', fontWeight: 900, color: item.color, fontFamily: mono }}>{item.metric}</span>
-              </div>
-              <div style={{ fontWeight: 700, fontSize: '0.94rem', color: '#f8fafc', marginBottom: '4px' }}>{item.label}</div>
-              <div style={{ fontSize: '0.78rem', color: '#94a3b8', lineHeight: 1.4 }}>{item.desc}</div>
+            { label: 'Zero-Trust Inline Proxy', icon: <Icons.Lock size={15} color="#10b981" /> },
+            { label: 'Cryptographic SHA-256 Vault', icon: <Icons.Shield size={15} color="#00f2fe" /> },
+            { label: 'HIPAA Safe Harbor Certified', icon: <Icons.Pulse size={15} color="#a855f7" /> },
+            { label: 'India DPDP Act 2023 Enforced', icon: <Icons.Card size={15} color="#f59e0b" /> },
+            { label: 'Real-Time Egress Guardrail', icon: <Icons.EyeScan size={15} color="#38bdf8" /> },
+          ].map((badge, idx) => (
+            <div
+              key={idx}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '8px 16px',
+                borderRadius: '100px',
+                background: 'rgba(15, 23, 42, 0.65)',
+                border: '1px solid rgba(255, 255, 255, 0.09)',
+                backdropFilter: 'blur(12px)',
+                fontSize: '0.82rem',
+                fontWeight: 600,
+                color: '#e2e8f0',
+                boxShadow: '0 4px 16px rgba(0, 0, 0, 0.3)',
+                transition: 'all 0.2s ease',
+              }}
+              className="glow-hover"
+            >
+              {badge.icon}
+              <span>{badge.label}</span>
             </div>
           ))}
         </div>
@@ -562,11 +569,11 @@ function LandingPage() {
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <Icons.Layers size={22} color="#00f2fe" />
                 <h2 style={{ fontSize: '1.5rem', fontWeight: 800, margin: 0, color: '#f8fafc' }}>
-                  Interactive 3D Pipeline Visualizer
+                  Live Zero-Trust Pipeline & Cloaking Stream
                 </h2>
               </div>
               <p style={{ fontSize: '0.88rem', color: '#94a3b8', margin: '4px 0 0 0' }}>
-                See how Adrishya transforms raw sensitive queries into zero-trust cryptographic tokens in real-time.
+                Watch Adrishya intercept sensitive inputs, apply SHA-256 cryptographic masking, and guard model egress in real-time.
               </p>
             </div>
 
@@ -901,7 +908,7 @@ function LandingPage() {
             &nbsp;&nbsp;-H <span style={{ color: '#10b981' }}>"Content-Type: application/json"</span> \\<br />
             &nbsp;&nbsp;-H <span style={{ color: '#10b981' }}>"X-Action-Mode: HASH"</span> \\<br />
             &nbsp;&nbsp;-H <span style={{ color: '#10b981' }}>"Authorization: Bearer YOUR_API_KEY"</span> \\<br />
-            &nbsp;&nbsp;-d <span style={{ color: '#f59e0b' }}>{"'{\"model\":\"gpt-4\",\"messages\":[{\"role\":\"user\",\"content\":\"Summarize medical chart for Patient Jane Doe (DOB: 08/23/1984, MRN-4820194)\"}]}'"}</span>
+            &nbsp;&nbsp;-d <span style={{ color: '#f59e0b' }}>{"'{\"model\":\"nvidia/Qwen3.6-35B-A3B-NVFP4\",\"messages\":[{\"role\":\"user\",\"content\":\"Summarize medical chart for Patient Jane Doe (DOB: 08/23/1984, MRN-4820194)\"}]}'"}</span>
           </div>
         </section>
 
