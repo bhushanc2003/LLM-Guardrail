@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { ClerkProvider, SignedIn, SignedOut, SignInButton, SignUpButton, UserButton, useAuth, useUser } from '@clerk/clerk-react';
 import Shell from './Shell.jsx';
-import { Loader3D, C, mono } from './ui.jsx';
+import { Loader3D, C, mono, IconShield, IconUser } from './ui.jsx';
 import { OverviewAdmin, OverviewUser, LogsView, SessionsView, UsersView, UserView, TestView, TrustAnalyticsView, AdminActivityUserList, Segmented } from './views.jsx';
 
 const CLERK_PUBLISHABLE_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY || "pk_test_ZHJpdmVuLWNsYW0tOTMwNi5jbGVyay5hY2NvdW50cy5kZXYk";
@@ -11,8 +11,8 @@ function LandingPage() {
     <div style={{ background: '#060913', minHeight: '100vh', color: '#f8fafc', fontFamily: 'system-ui, sans-serif' }}>
       <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', maxWidth: '1200px', margin: '0 auto', padding: '20px 20px', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <div style={{ width: '44px', height: '44px', borderRadius: '12px', background: 'linear-gradient(135deg, #00f2fe, #8b5cf6)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.4rem' }}>
-            🛡️
+          <div style={{ width: '44px', height: '44px', borderRadius: '12px', background: 'linear-gradient(135deg, #00f2fe, #8b5cf6)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <IconShield size={24} color="#ffffff" strokeWidth={2.2} />
           </div>
           <div>
             <h1 style={{ fontSize: '1.5rem', margin: 0, background: 'linear-gradient(to right, #fff, #38bdf8)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
@@ -263,8 +263,9 @@ function Dashboard() {
                 alignItems: 'center',
                 gap: '8px',
               }}>
-                <span style={{ color: '#00f2fe', fontWeight: 700 }}>
-                  👤 {nav.params.user_email || nav.params.user_uuid}
+                <span style={{ color: '#00f2fe', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <IconUser size={15} color="#00f2fe" strokeWidth={2} />
+                  {nav.params.user_email || nav.params.user_uuid}
                 </span>
                 {nav.params.user_uuid !== 'all' && (
                   <span style={{ color: C.faint, fontSize: '0.76rem', fontFamily: mono }}>

@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { C, Card, Kpi, DecisionChip, Empty, Loader, ScrollBox, LimitSelect, RequestTable, RequestDetail, ToggleSwitch, mono } from './ui.jsx';
+import { C, Card, Kpi, DecisionChip, Empty, Loader, ScrollBox, LimitSelect, RequestTable, RequestDetail, ToggleSwitch, IconShield, IconZap, IconUser, mono } from './ui.jsx';
 
 const inputStyle = {
   background: 'rgba(6, 10, 24, 0.75)',
@@ -1507,10 +1507,9 @@ export function TrustAnalyticsView({ authedFetch, me, isAdmin, initialUuid }) {
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            fontSize: '1.25rem',
             boxShadow: `0 0 16px ${trustColor}33`,
           }}>
-            🛡️
+            <IconShield size={22} color={trustColor} strokeWidth={2.2} />
           </div>
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -1878,10 +1877,9 @@ export function TrustAnalyticsView({ authedFetch, me, isAdmin, initialUuid }) {
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    fontSize: '1.4rem',
                     flex: 'none',
                   }}>
-                    ⚡
+                    <IconZap size={24} color={trustColor} strokeWidth={2.2} />
                   </div>
                   <div>
                     <div style={{ fontWeight: 700, fontSize: '0.98rem', color: trustColor }}>
