@@ -124,20 +124,22 @@ Here is the exact 3-tier hierarchy and where Regex operates:
                                             │
                                             ▼
 ┌────────────────────────────────────────────────────────────────────────────────────────┐
-│  TIER 1: CONTEXT-ANCHORED REGEX + LINGUISTIC STOP-WORD FILTERING                       │
-│  (Role of Regex: Context-Aware Grammar & Lookaround Boundaries)                        │
+│  TIER 1: CONTEXTUAL DECISION MODEL (GLiNER - Zero-Shot Neural Decision Layer)          │
+│  (Premier Open-Source Alternative to Jev for Non-Deterministic Entity Verification)    │
 │                                                                                        │
-│  1. Lookarounds & Keyword Anchors:                                                     │
-│     • Prevents false positives by only firing when bound to semantic indicators:       │
-│       - Clinical Dates:   (?:Admitted|Admission|Discharged|Died)[:#\s]+(?:\d{1,2}/...)  │
-│       - Indian PIN Codes: (?:PIN|PIN Code|Postal Code)[:#\s]+[1-9][0-9]{5}\b           │
-│       - Compensation:     (?:Salary|CTC|Income)[:#\s]+(?:₹|Rs\.?|INR\s*)?[\d.,]+LPA...  │
-│       - Medical Records:  (?:MRN|Med Rec #)[:#\s]+[A-Za-z0-9-]{6,12}\b                 │
+│  1. Zero-Shot Contextual Entity Classification:                                        │
+│     • Predicts arbitrary entity classes on unstructured text in ~25-100ms:             │
+│       - Names: "person", "patient", "doctor"                                           │
+│       - Geographical: "street address", "city", "county", "location"                   │
+│       - Individual Dates: "admission date", "discharge date", "date of birth"          │
+│       - Financials: "salary", "student roll number"                                    │
 │                                                                                        │
-│  2. NAME_STOP Dictionary Scrubbing:                                                    │
-│     • Regex scans capitalized token runs: \b[A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,3}\b       │
-│     • Filters candidates against 100+ clinical and protocol stop-words                 │
-│       (e.g., Hypertension, Ductal, Metoprolol, Monday, Patient, Records)               │
+│  2. Solves the False Positive Problem without Static Dictionaries:                     │
+│     • Semantic context understanding:                                                  │
+│       - Correctly ignores "Ductal Carcinoma" & "Metoprolol" (diagnoses / medications)  │
+│       - Accurately captures "Alice Walker" (patient) and "Dr. Smith" (doctor)          │
+│     • Resilient Fail-Safe: If neural model is offline, gracefully falls back to        │
+│       context-anchored regex + NAME_STOP dictionary scrubbing.                         │
 └───────────────────────────────────────────┬────────────────────────────────────────────┘
                                             │
                                             ▼

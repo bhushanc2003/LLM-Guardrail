@@ -40,7 +40,21 @@ class PIIDetector:
 
     def __init__(self):
         self._compile_regexes()
+        self._init_gliner()
         self._init_presidio()
+
+    def _init_gliner(self):
+        """Zero-shot contextual decision layer using GLiNER (the premier open-source alternative to Jev)."""
+        self.gliner_model = None
+        import os
+        if os.getenv("ENABLE_GLINER", "true").lower() == "true":
+            try:
+                from gliner import GLiNER
+                self.gliner_model = GLiNER.from_pretrained("urchade/gliner_small-v2.1")
+                print("GLiNER Contextual Decision Engine initialized successfully.")
+            except Exception as e:
+                print(f"GLiNER init skipped / fallback enabled: {e}")
+                self.gliner_model = None
 
     def _init_presidio(self):
         """NER pass (names / places) using Presidio on spaCy's small English model. Off unless ENABLE_PRESIDIO=true."""
@@ -309,31 +323,10 @@ class PIIDetector:
         _add(self.regex_bank_account, "ACCOUNT_NUMBER", 10, 0.95, "SHARED")
         _add(self.regex_mac, "DEVICE_ID", 13, 0.98, "SHARED")
         _add(self.regex_uuid, "DEVICE_ID", 13, 0.98, "SHARED")
-        _add(self.regex_device_sn, "DEVICE_ID", 13, 0.93, "SHARED")
         _add(self.regex_phone, "PHONE", 4, 0.90, "SHARED")
-        _add(self.regex_address, "GEO_DATA", 2, 0.92, "SHARED")
-        _add(self.regex_city_county, "GEO_DATA", 2, 0.88, "SHARED")
-        _add(self.regex_individual_date, "INDIVIDUAL_DATE", 3, 0.94, "SHARED")
-
-        # Name context heuristic
-        for m in self.regex_name_context.finditer(text):
-            full_match = m.group(0)
-            name_part = m.group(1) if m.lastindex and m.lastindex >= 1 else full_match
-            start_idx = m.start(1) if m.lastindex and m.lastindex >= 1 else m.start()
-            end_idx = m.end(1) if m.lastindex and m.lastindex >= 1 else m.end()
-            matches.append(PIIMatch(
-                entity_type="NAME",
-                category_id=1,
-                category_name=self.CATEGORIES[1],
-                start=start_idx,
-                end=end_idx,
-                text=name_part,
-                confidence=0.91,
-                framework="SHARED"
-            ))
 
         # ----------------------------------------------------
-        # 2. EVALUATE HIPAA SPECIFIC PATTERNS
+        # 2. EVALUATE DETERMINISTIC HIPAA PATTERNS
         # ----------------------------------------------------
         if check_hipaa:
             _add(self.regex_ssn, "SSN", 7, 0.98, "HIPAA")
@@ -345,10 +338,9 @@ class PIIDetector:
             _add(self.regex_vin, "VEHICLE_ID", 12, 0.95, "HIPAA")
             _add(self.regex_license_plate, "VEHICLE_ID", 12, 0.92, "HIPAA")
             _add(self.regex_zip, "GEO_DATA", 2, 0.95, "HIPAA")
-            _add(self.regex_medical_date, "INDIVIDUAL_DATE", 3, 0.94, "HIPAA")
 
         # ----------------------------------------------------
-        # 3. EVALUATE DPDP SPECIFIC PATTERNS (India Act 2023)
+        # 3. EVALUATE DETERMINISTIC DPDP PATTERNS (India Act 2023)
         # ----------------------------------------------------
         if check_dpdp:
             _add(self.regex_aadhaar, "AADHAAR", 7, 0.99, "DPDP")
@@ -360,10 +352,6 @@ class PIIDetector:
             _add(self.regex_indian_passport, "PASSPORT", 11, 0.95, "DPDP")
             _add(self.regex_indian_dl, "DRIVING_LICENSE", 11, 0.94, "DPDP")
             _add(self.regex_emp_id, "EMPLOYEE_ID", 11, 0.93, "DPDP")
-            _add(self.regex_salary, "SALARY", 10, 0.92, "DPDP")
-            _add(self.regex_student_id, "STUDENT_ID", 11, 0.92, "DPDP")
-            _add(self.regex_age_gender, "AGE_GENDER", 3, 0.90, "DPDP")
-            _add(self.regex_gps, "GEO_DATA", 2, 0.95, "DPDP")
             _add(self.regex_ifsc, "ACCOUNT_NUMBER", 10, 0.92, "DPDP")
             _add(self.regex_upi_generic, "UPI_ID", 10, 0.92, "DPDP")
             _add(self.regex_passport_bare, "PASSPORT", 11, 0.93, "DPDP")
@@ -371,18 +359,125 @@ class PIIDetector:
             _add(self.regex_emp_bare, "EMPLOYEE_ID", 11, 0.94, "DPDP")
             _add(self.regex_indian_mobile_spaced, "INDIAN_MOBILE", 4, 0.95, "DPDP")
 
-        # Bare-name heuristic (opt-in, used by the hooks): runs of 2-4 capitalised words, minus a stop list
-        if aggressive_names:
-            for m in self.regex_name_run.finditer(text):
-                tokens = [(t.group(0), t.start(), t.end()) for t in re.finditer(r'\S+', m.group(0))]
-                while tokens and tokens[0][0].lower() in self.NAME_STOP:
-                    tokens.pop(0)
-                while tokens and tokens[-1][0].lower() in self.NAME_STOP:
-                    tokens.pop()
-                if len(tokens) < 2 or any(t[0].lower() in self.NAME_STOP for t in tokens):
-                    continue
-                start, end = m.start() + tokens[0][1], m.start() + tokens[-1][2]
-                matches.append(PIIMatch("NAME", 1, self.CATEGORIES[1], start, end, text[start:end], 0.85, "SHARED"))
+        # ----------------------------------------------------
+        # TIER 1: CONTEXTUAL DECISION MODEL (GLiNER - Zero-Shot Neural Decision Layer)
+        # Evaluates non-deterministic entities (Names, Addresses, Clinical Dates, Salaries)
+        # ----------------------------------------------------
+        gliner_handled = False
+        if self.gliner_model:
+            try:
+                gliner_labels = [
+                    "person", "patient", "doctor",
+                    "street address", "city", "location",
+                    "admission date", "discharge date", "date of birth",
+                    "salary", "student roll number"
+                ]
+                gliner_ents = self.gliner_model.predict_entities(text, gliner_labels, threshold=0.45)
+                for ent in gliner_ents:
+                    lbl = ent["label"]
+                    start, end = ent["start"], ent["end"]
+                    ent_text = ent["text"]
+                    score = float(ent["score"])
+
+                    if lbl in ["person", "patient", "doctor"]:
+                        matches.append(PIIMatch(
+                            entity_type="NAME",
+                            category_id=1,
+                            category_name=self.CATEGORIES[1],
+                            start=start,
+                            end=end,
+                            text=ent_text,
+                            confidence=score,
+                            framework="SHARED"
+                        ))
+                    elif lbl in ["street address", "city", "location"]:
+                        matches.append(PIIMatch(
+                            entity_type="GEO_DATA",
+                            category_id=2,
+                            category_name=self.CATEGORIES[2],
+                            start=start,
+                            end=end,
+                            text=ent_text,
+                            confidence=score,
+                            framework="SHARED"
+                        ))
+                    elif lbl in ["admission date", "discharge date", "date of birth"]:
+                        matches.append(PIIMatch(
+                            entity_type="INDIVIDUAL_DATE",
+                            category_id=3,
+                            category_name=self.CATEGORIES[3],
+                            start=start,
+                            end=end,
+                            text=ent_text,
+                            confidence=score,
+                            framework="HIPAA" if check_hipaa else "SHARED"
+                        ))
+                    elif lbl == "salary" and check_dpdp:
+                        matches.append(PIIMatch(
+                            entity_type="SALARY",
+                            category_id=10,
+                            category_name=self.CATEGORIES[10],
+                            start=start,
+                            end=end,
+                            text=ent_text,
+                            confidence=score,
+                            framework="DPDP"
+                        ))
+                    elif lbl == "student roll number" and check_dpdp:
+                        matches.append(PIIMatch(
+                            entity_type="STUDENT_ID",
+                            category_id=11,
+                            category_name=self.CATEGORIES[11],
+                            start=start,
+                            end=end,
+                            text=ent_text,
+                            confidence=score,
+                            framework="DPDP"
+                        ))
+                gliner_handled = True
+            except Exception as e:
+                print(f"GLiNER prediction error, falling back to heuristic: {e}")
+                gliner_handled = False
+
+        if not gliner_handled:
+            # Fallback to context-anchored heuristic regex and dictionary scrubbing
+            _add(self.regex_address, "GEO_DATA", 2, 0.92, "SHARED")
+            _add(self.regex_city_county, "GEO_DATA", 2, 0.88, "SHARED")
+            _add(self.regex_individual_date, "INDIVIDUAL_DATE", 3, 0.94, "SHARED")
+            if check_hipaa:
+                _add(self.regex_medical_date, "INDIVIDUAL_DATE", 3, 0.94, "HIPAA")
+            if check_dpdp:
+                _add(self.regex_salary, "SALARY", 10, 0.92, "DPDP")
+                _add(self.regex_student_id, "STUDENT_ID", 11, 0.92, "DPDP")
+                _add(self.regex_age_gender, "AGE_GENDER", 3, 0.90, "DPDP")
+                _add(self.regex_gps, "GEO_DATA", 2, 0.95, "DPDP")
+            # Name context heuristic
+            for m in self.regex_name_context.finditer(text):
+                full_match = m.group(0)
+                name_part = m.group(1) if m.lastindex and m.lastindex >= 1 else full_match
+                start_idx = m.start(1) if m.lastindex and m.lastindex >= 1 else m.start()
+                end_idx = m.end(1) if m.lastindex and m.lastindex >= 1 else m.end()
+                matches.append(PIIMatch(
+                    entity_type="NAME",
+                    category_id=1,
+                    category_name=self.CATEGORIES[1],
+                    start=start_idx,
+                    end=end_idx,
+                    text=name_part,
+                    confidence=0.91,
+                    framework="SHARED"
+                ))
+            if aggressive_names:
+                for m in self.regex_name_run.finditer(text):
+                    tokens = [(t.group(0), t.start(), t.end()) for t in re.finditer(r'\S+', m.group(0))]
+                    while tokens and tokens[0][0].lower() in self.NAME_STOP:
+                        tokens.pop(0)
+                    while tokens and tokens[-1][0].lower() in self.NAME_STOP:
+                        tokens.pop()
+                    if len(tokens) < 2 or any(t[0].lower() in self.NAME_STOP for t in tokens):
+                        continue
+                    start, end = m.start() + tokens[0][1], m.start() + tokens[-1][2]
+                    matches.append(PIIMatch("NAME", 1, self.CATEGORIES[1], start, end, text[start:end], 0.85, "SHARED"))
 
         # Optional Presidio NLP
         if self.presidio_analyzer:
