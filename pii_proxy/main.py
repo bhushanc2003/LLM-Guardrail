@@ -645,7 +645,13 @@ async def sync_user(req: UserSyncRequest, request: Request, claims: dict = Depen
     """
     db = SessionLocal()
     try:
+        ADMIN_EMAILS = {"admin@jashds.com", "bhushanc2003@gmail.com", "saurabhshisode20@gmail.com", "shraddha.londhe@jashds.com"}
         user = db.query(DBUser).filter(DBUser.clerk_user_id == claims["sub"]).first()
+        if user and user.email and user.email.lower() in ADMIN_EMAILS and user.role != "admin":
+            user.role = "admin"
+            db.commit()
+            db.refresh(user)
+
         if not user:
             user_email = (req.email or "").strip().lower()
             if user_email:
@@ -654,14 +660,14 @@ async def sync_user(req: UserSyncRequest, request: Request, claims: dict = Depen
                     user.clerk_user_id = claims["sub"]
                     if req.name and not user.name:
                         user.name = req.name
-                    if user_email == "admin@jashds.com":
+                    if user_email in ADMIN_EMAILS:
                         user.role = "admin"
                     db.commit()
                     db.refresh(user)
 
         if not user:
             u_uuid = f"usr_{uuid.uuid4().hex[:8]}"
-            assigned_role = "admin" if (req.email and req.email.strip().lower() == "admin@jashds.com") else "user"
+            assigned_role = "admin" if (req.email and req.email.strip().lower() in ADMIN_EMAILS) else "user"
             user = DBUser(
                 clerk_user_id=claims["sub"],
                 email=req.email or f"{req.clerk_user_id}@noemail.local",
