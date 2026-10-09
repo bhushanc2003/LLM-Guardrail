@@ -8,22 +8,58 @@ This document provides a comprehensive technical breakdown of all personal data 
 
 The system uses a **multi-tiered, hybrid detection architecture**:
 
-```mermaid
-flowchart TD
-    Prompt[Inbound Prompt / Text] --> Router{Framework Evaluation}
-    Router -->|hipaa_enabled = true| TierHIPAA[Tier 1: HIPAA Safe Harbor Engine]
-    Router -->|dpdp_enabled = true| TierDPDP[Tier 2: DPDP India Identifiers Engine]
-    Router -->|shared = true| TierShared[Tier 0: Shared Global Identifiers]
-    
-    TierHIPAA --> Aggregator[Conflict Resolution & Deduplication Window]
-    TierDPDP --> Aggregator
-    TierShared --> Aggregator
-
-    Aggregator --> ActionEngine{Action Mode}
-    ActionEngine -->|REDACT| Redactor[Static/Semantic Replacement]
-    ActionEngine -->|BLOCK| Blocker[HTTP 400 Policy Violation]
-    ActionEngine -->|HASH| Hasher[HMAC SHA-256 Pseudonymization]
-    ActionEngine -->|LOG_ONLY| Logger[Pass-through + Tamper-evident Audit]
+```text
+┌──────────────────────────────────────────────────────────────────────────────────────────┐
+│                            INBOUND PROMPT / LIVE LLM REQUEST                             │
+└────────────────────────────────────────────┬─────────────────────────────────────────────┘
+                                             │
+                                             ▼
+┌──────────────────────────────────────────────────────────────────────────────────────────┐
+│                      FRAMEWORK ROUTER (User Compliance Settings)                         │
+│                                                                                          │
+│   • Shared PII: Always evaluated (Email, Phone, IP, Credit Cards, MAC, Basic Dates)      │
+│   • HIPAA Toggle: Evaluates 18 Safe Harbor PHI rules (SSN, MRN, Health Plan, Clinical)  │
+│   • DPDP Toggle:  Evaluates 27 Indian Personal Identifiers (Aadhaar, PAN, UPI, PIN, etc) │
+└────────────┬───────────────────────────────┬──────────────────────────────┬──────────────┘
+             │                               │                              │
+   [ If HIPAA is ON ]             [ If DPDP is ON ]               [ Shared Active ]
+             │                               │                              │
+             ▼                               ▼                              ▼
+┌─────────────────────────┐     ┌─────────────────────────┐     ┌─────────────────────────┐
+│   HIPAA DETECTOR (US)   │     │    DPDP DETECTOR (IN)   │     │    SHARED DETECTOR      │
+│ ─────────────────────── │     │ ─────────────────────── │     │ ─────────────────────── │
+│ • Social Security (SSN) │     │ • Aadhaar (12-digit UID)│     │ • Email (RFC 5322)      │
+│ • Medical Record (MRN)  │     │ • PAN Card (10-char ITD)│     │ • IPv4 & IPv6 Addresses │
+│ • Health Beneficiary ID │     │ • UPI Handles & VPAs    │     │ • Credit / Debit Cards  │
+│ • Hospital Dates & DOB  │     │ • Indian Mobile (+91)   │     │ • Bank Account / IBAN   │
+│ • Vehicle VIN & Plates  │     │ • Indian PIN Codes      │     │ • Street Addresses      │
+│ • Medical License / DL  │     │ • Passport, Voter ID, DL│     │ • UUIDs, MAC Addresses  │
+│ • Biometric / Face Meta │     │ • Salary, CTC, Stipends │     │ • Device Serial Numbers │
+│ • Patient Specific IDs  │     │ • IFSC Bank Codes       │     │ • Standard Date of Birth│
+└────────────┬────────────┘     └────────────┬────────────┘     └────────────┬────────────┘
+             │                               │                               │
+             └───────────────────────┬───────┴───────────────────────────────┘
+                                     │
+                                     ▼
+┌──────────────────────────────────────────────────────────────────────────────────────────┐
+│                   AGGREGATION, DEDUPLICATION & CONFLICT RESOLUTION                       │
+│                                                                                          │
+│  • Offsets sorted chronologically: start_idx asc, length desc, confidence desc           │
+│  • Overlapping entity suppression: Keeps highest-confidence / most-specific match        │
+│  • Category Mapping: Normalizes entity types to DB Category IDs [1 - 15]                 │
+└────────────────────────────────────────────┬─────────────────────────────────────────────┘
+                                             │
+                                             ▼
+┌──────────────────────────────────────────────────────────────────────────────────────────┐
+│                             ENFORCEMENT ENGINE (Action Mode)                             │
+├───────────────────┬───────────────────┬────────────────────┬─────────────────────────────┤
+│      REDACT       │       BLOCK       │        HASH        │          LOG_ONLY           │
+│ ───────────────── │ ───────────────── │ ────────────────── │ ─────────────────────────── │
+│ Static label      │ Immediate HTTP    │ Deterministic HMAC │ Passes prompt as-is, records│
+│ replacement       │ 400 rejection     │ SHA-256 pseudonym  │ tamper-evident hash to      │
+│ e.g. [REDACTED_   │ Prevents data     │ allows entity      │ audit trail with zero       │
+│ AADHAAR]          │ egress to LLM     │ joins              │ modification                │
+└───────────────────┴───────────────────┴────────────────────┴─────────────────────────────┘
 ```
 
 1. **Tier 0: High-Precision Deterministic Matchers (Format Validation)**:
