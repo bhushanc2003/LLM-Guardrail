@@ -16,8 +16,7 @@ def main():
 
     config = uvicorn.Config(
         "pii_proxy.main:app",
-        reload=True,
-        reload_dirs=["pii_proxy"],
+        reload=False,
         log_level="info"
     )
     server = uvicorn.Server(config)
