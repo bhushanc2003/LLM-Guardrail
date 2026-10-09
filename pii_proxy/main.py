@@ -85,12 +85,12 @@ FRONTEND_ASSETS = os.path.join(FRONTEND_DIST, "assets")
 if os.path.isdir(FRONTEND_ASSETS):
     app.mount("/assets", StaticFiles(directory=FRONTEND_ASSETS), name="frontend-assets")
 
-@app.get("/", response_class=HTMLResponse)
-@app.get("/overview", response_class=HTMLResponse)
-@app.get("/activity", response_class=HTMLResponse)
-@app.get("/users", response_class=HTMLResponse)
-@app.get("/trust", response_class=HTMLResponse)
-@app.get("/test", response_class=HTMLResponse)
+@app.api_route("/", methods=["GET", "HEAD"], response_class=HTMLResponse)
+@app.api_route("/overview", methods=["GET", "HEAD"], response_class=HTMLResponse)
+@app.api_route("/activity", methods=["GET", "HEAD"], response_class=HTMLResponse)
+@app.api_route("/users", methods=["GET", "HEAD"], response_class=HTMLResponse)
+@app.api_route("/trust", methods=["GET", "HEAD"], response_class=HTMLResponse)
+@app.api_route("/test", methods=["GET", "HEAD"], response_class=HTMLResponse)
 async def render_dashboard(request: Request):
     """Serve the complete dashboard with 3-method AI benchmark sandbox and initial loader state."""
     clerk_pub_key = os.getenv("VITE_CLERK_PUBLISHABLE_KEY", "pk_test_ZHJpdmVuLWNsYW0tOTMwNi5jbGVyay5hY2NvdW50cy5kZXYk")
@@ -1038,7 +1038,7 @@ def _tokens_from_sse(raw: str):
         if obj.get("usage"):
             usage = obj["usage"]
         for choice in obj.get("choices", []):
-            text = (choice.get("delta") or {}).get("content")
+            text = (choice.get("delta") or {}).get("content") or choice.get("text") or (choice.get("message") or {}).get("content")
             if isinstance(text, str):
                 parts.append(text)
     return usage, "".join(parts)
@@ -1263,13 +1263,20 @@ async def chat_completions(request: Request, user_uuid: Optional[str] = "default
             finally:
                 usage, completion_text = _tokens_from_sse("".join(raw_parts))
                 _record_usage(event_id, req_body.get("messages"), usage, completion_text)
-                if (check_hipaa or check_dpdp) and completion_text and event_id:
-                    out_matches = detector.detect(completion_text, check_hipaa=check_hipaa, check_dpdp=check_dpdp)
-                    sanitized_stream_text, _ = anonymizer.process_text(completion_text, vault, mode=action_mode, check_hipaa=check_hipaa, check_dpdp=check_dpdp)
+                if event_id:
+                    out_matches = []
+                    if completion_text and (check_hipaa or check_dpdp):
+                        out_matches = detector.detect(completion_text, check_hipaa=check_hipaa, check_dpdp=check_dpdp)
+                    sanitized_stream_text = completion_text
+                    if out_matches:
+                        if action_mode in ("REDACT", "HASH"):
+                            sanitized_stream_text, _ = anonymizer.process_text(completion_text, vault, mode=action_mode, check_hipaa=check_hipaa, check_dpdp=check_dpdp)
+                        elif action_mode == "BLOCK":
+                            sanitized_stream_text = "🚫 MODEL OUTPUT BLOCKED BY COMPLIANCE POLICY"
                     audit_logger.log_egress_inspection(
                         event_id=event_id,
-                        original_response=completion_text,
-                        anonymized_response=sanitized_stream_text,
+                        original_response=completion_text or "",
+                        anonymized_response=sanitized_stream_text or "",
                         egress_matches=out_matches,
                         action_mode=action_mode,
                         vault=vault
@@ -1329,7 +1336,7 @@ async def chat_completions(request: Request, user_uuid: Optional[str] = "default
                                 )
                                 msg["content"] = sanitized_text
 
-            sanitized_completion = "".join(
+            sanitized_completion = "🚫 MODEL OUTPUT BLOCKED BY COMPLIANCE POLICY" if blocked_egress else "".join(
                 (c.get("message") or {}).get("content") or "" for c in res_data.get("choices", []) if isinstance(c.get("message"), dict)
             )
 
@@ -1484,11 +1491,15 @@ async def text_completions(request: Request, user_uuid: Optional[str] = "default
                                 sanitized_text, _ = anonymizer.process_output(out_text, vault, mode=action_mode, check_hipaa=check_hipaa, check_dpdp=check_dpdp)
                                 choice["text"] = sanitized_text
 
-            if event_id and egress_violations:
+            raw_text = "".join(c.get("text") or "" for c in res_data.get("choices", []) if isinstance(c, dict))
+            sanitized_text = "🚫 MODEL OUTPUT BLOCKED BY COMPLIANCE POLICY" if blocked_egress else "".join(
+                c.get("text") or "" for c in res_data.get("choices", []) if isinstance(c, dict)
+            )
+            if event_id:
                 audit_logger.log_egress_inspection(
                     event_id=event_id,
-                    original_response=str([c.get("text") for c in res_data.get("choices", [])]),
-                    anonymized_response=str([c.get("text") for c in res_data.get("choices", [])]),
+                    original_response=raw_text,
+                    anonymized_response=sanitized_text,
                     egress_matches=egress_violations,
                     action_mode=action_mode,
                     vault=vault

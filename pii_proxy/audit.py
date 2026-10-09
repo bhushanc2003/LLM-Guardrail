@@ -161,9 +161,9 @@ class AuditLogger:
             if not event:
                 return
 
-            egress_count = len(egress_matches)
+            egress_count = len(egress_matches) if egress_matches else 0
             event.original_response = original_response or None
-            event.anonymized_response = anonymized_response if action_mode in ("REDACT", "HASH") else None
+            event.anonymized_response = anonymized_response or original_response or None
             event.egress_pii_count = egress_count
 
             if egress_count > 0:

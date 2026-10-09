@@ -389,37 +389,68 @@ export function RequestDetail({ eventId, authedFetch, onBack }) {
         </div>
       )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: '20px', marginBottom: '20px' }}>
+      {/* 4 Pipeline Boxes: Prompt Ingress -> Processed to LLM -> Raw LLM Output -> Filtered & Delivered to User */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: '20px', marginBottom: '24px' }}>
         <div>
-          <div style={label}>Original Prompt (Ingress)</div>
+          <div style={{ ...label, display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <span style={{ color: '#38bdf8', fontWeight: 800 }}>1.</span> USER PROMPT (INGRESS)
+          </div>
           <div style={box}>{e.original_text || <span style={{ color: C.faint }}>not stored</span>}</div>
         </div>
+
         <div>
-          <div style={label}>Processed Payload (Upstream AI Model)</div>
-          <div style={{ ...box, color: C.allow, borderColor: e.decision === 'block' && (!e.egress_pii_count) ? 'rgba(244, 63, 94, 0.4)' : 'rgba(16, 185, 129, 0.4)' }}>
+          <div style={{ ...label, display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <span style={{ color: '#00f2fe', fontWeight: 800 }}>2.</span> PROCESSED PAYLOAD (SENT TO LLM)
+          </div>
+          <div style={{
+            ...box,
+            color: C.allow,
+            borderColor: e.decision === 'block' && (!e.egress_pii_count) ? 'rgba(244, 63, 94, 0.4)' : 'rgba(16, 185, 129, 0.4)'
+          }}>
             {e.decision === 'block' && (!e.egress_pii_count)
               ? <span style={{ color: C.block, fontWeight: 700 }}>🚫 BLOCKED. Policy violation intercepted before reaching external nodes.</span>
               : (e.anonymized_text || e.original_text || <span style={{ color: C.faint }}>no change</span>)}
           </div>
         </div>
-      </div>
 
-      {(e.original_response || e.anonymized_response) && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: '20px', marginBottom: '24px' }}>
-          <div>
-            <div style={label}>Model Raw Output (Egress)</div>
-            <div style={{ ...box, color: '#f8fafc' }}>{e.original_response}</div>
+        <div>
+          <div style={{ ...label, display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <span style={{ color: '#a855f7', fontWeight: 800 }}>3.</span> RAW LLM OUTPUT (RECEIVED FROM MODEL)
           </div>
-          <div>
-            <div style={label}>Delivered Response (Sanitized)</div>
-            <div style={{ ...box, color: C.allow, borderColor: (e.action_mode === 'BLOCK' || e.decision === 'block') && e.egress_pii_count ? 'rgba(244, 63, 94, 0.4)' : 'rgba(16, 185, 129, 0.4)' }}>
-              {(e.action_mode === 'BLOCK' || e.decision === 'block') && e.egress_pii_count
-                ? <span style={{ color: C.block, fontWeight: 700 }}>🚫 BLOCKED. Model output policy violation intercepted from reaching user (output tokens tracked, user score unaffected).</span>
-                : (e.anonymized_response || e.original_response || <span style={{ color: C.faint }}>no change</span>)}
-            </div>
+          <div style={{ ...box, color: '#f8fafc' }}>
+            {e.original_response ? (
+              e.original_response
+            ) : (
+              <span style={{ color: C.faint }}>
+                {e.decision === 'block' && (!e.egress_pii_count)
+                  ? 'Request blocked on ingress — never reached upstream model.'
+                  : (e.completion_tokens ? `Completion recorded (${e.completion_tokens} tokens), raw text not captured.` : 'No output captured.')}
+              </span>
+            )}
           </div>
         </div>
-      )}
+
+        <div>
+          <div style={{ ...label, display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <span style={{ color: '#10b981', fontWeight: 800 }}>4.</span> DELIVERED RESPONSE (FILTERED & SENT TO USER)
+          </div>
+          <div style={{
+            ...box,
+            color: C.allow,
+            borderColor: (e.action_mode === 'BLOCK' || e.decision === 'block') && e.egress_pii_count ? 'rgba(244, 63, 94, 0.4)' : 'rgba(16, 185, 129, 0.4)'
+          }}>
+            {(e.action_mode === 'BLOCK' || e.decision === 'block') && e.egress_pii_count
+              ? <span style={{ color: C.block, fontWeight: 700 }}>🚫 BLOCKED. Model output policy violation intercepted from reaching user (output tokens tracked, user score unaffected).</span>
+              : (e.anonymized_response || e.original_response || (
+                  <span style={{ color: C.faint }}>
+                    {e.decision === 'block' && (!e.egress_pii_count)
+                      ? 'Request was blocked on ingress.'
+                      : (e.completion_tokens ? 'Delivered as-is to user.' : 'No response delivered.')}
+                  </span>
+                ))}
+          </div>
+        </div>
+      </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: '20px' }}>
         <div>
