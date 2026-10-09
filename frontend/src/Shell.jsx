@@ -1,12 +1,25 @@
 import React, { useState } from 'react';
-import { C } from './ui.jsx';
+import {
+  C,
+  IconShield,
+  IconOverview,
+  IconActivity,
+  IconTrust,
+  IconUsers,
+  IconTest,
+  IconSun,
+  IconMoon,
+  IconMenu,
+  IconChevronLeft,
+  IconChevronRight,
+} from './ui.jsx';
 
 const navIcons = {
-  overview: '⚡',
-  activity: '📊',
-  trust: '🛡️',
-  users: '👥',
-  test: '🧪',
+  overview: IconOverview,
+  activity: IconActivity,
+  trust: IconTrust,
+  users: IconUsers,
+  test: IconTest,
 };
 
 export default function Shell({ items, active, onNav, title, subtitle, userButton, children }) {
@@ -17,6 +30,30 @@ export default function Shell({ items, active, onNav, title, subtitle, userButto
       return false;
     }
   });
+
+  const [theme, setTheme] = useState(() => {
+    try {
+      return localStorage.getItem('app_theme') || 'dark';
+    } catch (_) {
+      return 'dark';
+    }
+  });
+
+  const toggleTheme = () => {
+    const next = theme === 'dark' ? 'light' : 'dark';
+    setTheme(next);
+    try {
+      localStorage.setItem('app_theme', next);
+    } catch (_) {}
+    document.documentElement.setAttribute('data-theme', next);
+    if (next === 'light') {
+      document.body.style.backgroundColor = '#f1f5f9';
+      document.body.style.color = '#0f172a';
+    } else {
+      document.body.style.backgroundColor = '#060913';
+      document.body.style.color = '#f8fafc';
+    }
+  };
 
   const toggle = () => {
     setCollapsed(prev => {
@@ -73,7 +110,6 @@ export default function Shell({ items, active, onNav, title, subtitle, userButto
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                fontSize: '1.25rem',
                 boxShadow: '0 0 16px rgba(0, 242, 254, 0.4)',
                 flex: 'none',
                 cursor: 'pointer',
@@ -81,7 +117,7 @@ export default function Shell({ items, active, onNav, title, subtitle, userButto
               onClick={toggle}
               title={collapsed ? 'Click to expand sidebar' : 'PII Guardrail'}
             >
-              🛡️
+              <IconShield size={22} color="#ffffff" strokeWidth={2.2} />
             </div>
             {!collapsed && (
               <div style={{ overflow: 'hidden', whiteSpace: 'nowrap' }}>
@@ -117,12 +153,11 @@ export default function Shell({ items, active, onNav, title, subtitle, userButto
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                fontSize: '0.8rem',
                 flex: 'none',
                 transition: 'all 0.15s ease',
               }}
             >
-              ❮
+              <IconChevronLeft size={14} color="#00f2fe" strokeWidth={2.2} />
             </button>
           )}
         </div>
@@ -131,6 +166,7 @@ export default function Shell({ items, active, onNav, title, subtitle, userButto
         <nav style={{ padding: collapsed ? '16px 8px' : '16px 12px', display: 'grid', gap: '6px' }}>
           {items.map(item => {
             const on = item.key === active;
+            const IconComp = navIcons[item.key] || IconOverview;
             return (
               <button
                 key={item.key}
@@ -159,8 +195,14 @@ export default function Shell({ items, active, onNav, title, subtitle, userButto
                   width: '100%',
                 }}
               >
-                <span style={{ fontSize: '1.2rem', filter: on ? 'drop-shadow(0 0 8px rgba(0,242,254,0.6))' : 'none', flex: 'none' }}>
-                  {navIcons[item.key] || '•'}
+                <span style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  filter: on ? 'drop-shadow(0 0 8px rgba(0,242,254,0.6))' : 'none',
+                  flex: 'none',
+                }}>
+                  <IconComp size={18} color={on ? '#00f2fe' : 'currentColor'} strokeWidth={on ? 2.2 : 1.8} />
                 </span>
                 {!collapsed && (
                   <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -189,11 +231,10 @@ export default function Shell({ items, active, onNav, title, subtitle, userButto
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                fontSize: '0.85rem',
                 transition: 'all 0.15s ease',
               }}
             >
-              ❯
+              <IconChevronRight size={16} color="#00f2fe" strokeWidth={2.2} />
             </button>
           </div>
         )}
@@ -263,11 +304,10 @@ export default function Shell({ items, active, onNav, title, subtitle, userButto
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                fontSize: '0.9rem',
                 transition: 'all 0.15s ease',
               }}
             >
-              ☰
+              <IconMenu size={16} color={C.muted} strokeWidth={2} />
             </button>
             <div>
               <div style={{
@@ -283,7 +323,36 @@ export default function Shell({ items, active, onNav, title, subtitle, userButto
               {subtitle && <div style={{ color: C.muted, fontSize: '0.82rem', marginTop: '2px', fontWeight: 500 }}>{subtitle}</div>}
             </div>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+            {/* Theme Toggle Button */}
+            <button
+              onClick={toggleTheme}
+              title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '6px 14px',
+                borderRadius: '10px',
+                background: theme === 'dark' ? 'rgba(255, 255, 255, 0.06)' : 'rgba(15, 23, 42, 0.05)',
+                border: theme === 'dark' ? '1px solid rgba(255, 255, 255, 0.12)' : '1px solid rgba(15, 23, 42, 0.12)',
+                color: theme === 'dark' ? '#f8fafc' : '#0f172a',
+                cursor: 'pointer',
+                fontSize: '0.84rem',
+                fontWeight: 600,
+                transition: 'all 0.18s ease',
+                backdropFilter: 'blur(12px)',
+              }}
+            >
+              <span style={{ display: 'flex', alignItems: 'center' }}>
+                {theme === 'dark' ? (
+                  <IconMoon size={15} color="#94a3b8" strokeWidth={2} />
+                ) : (
+                  <IconSun size={15} color="#f59e0b" strokeWidth={2} />
+                )}
+              </span>
+              <span>{theme === 'dark' ? 'Dark' : 'Light'}</span>
+            </button>
             {userButton}
           </div>
         </header>
@@ -295,7 +364,6 @@ export default function Shell({ items, active, onNav, title, subtitle, userButto
           display: 'grid',
           gap: '22px',
           alignContent: 'start',
-          maxWidth: '1440px',
           width: '100%',
           boxSizing: 'border-box',
         }}>
