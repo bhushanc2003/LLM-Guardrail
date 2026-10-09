@@ -1128,7 +1128,6 @@ export function OverviewUser({ authedFetch, me, onOpenEvent }) {
         <Kpi label="Requests" value={stats?.total_requests ?? 0} hint={`${d.allow || 0} allowed`} />
         <Kpi label="Violations" value={(d.redact || 0) + (d.block || 0)} hint={`${d.redact || 0} redacted · ${d.block || 0} blocked`} />
         <Kpi label="PII found" value={stats?.total_pii_detected ?? 0} />
-        <Kpi label="Tokens, latest session" value={(tokens?.latest_session?.total_tokens ?? 0).toLocaleString()} hint={tokens?.latest_session ? `${tokens.latest_session.prompt_tokens} in · ${tokens.latest_session.completion_tokens} out` : undefined} />
         <Kpi label="Average tokens per session" value={Math.round(tokens?.average_tokens_per_session ?? 0).toLocaleString()} hint={`${tokens?.average_tokens_per_request ?? 0} per request`} />
         <Kpi label="Average latency" value={`${Math.round(stats?.avg_latency_ms ?? 0)} ms`} hint="per request" />
       </div>
