@@ -819,6 +819,7 @@ export function UsersView({ authedFetch, onOpenUser }) {
               <tr>
                 <th style={cellTh}>Email</th>
                 <th style={cellTh}>Role</th>
+                <th style={cellTh}>Method</th>
                 <th style={{ ...cellTh, textAlign: 'right' }}>Requests</th>
                 <th style={{ ...cellTh, textAlign: 'right' }}>Violations</th>
                 <th style={{ ...cellTh, textAlign: 'right' }}>PII</th>
@@ -837,6 +838,19 @@ export function UsersView({ authedFetch, onOpenUser }) {
                 >
                   <td style={cellTd}>{u.email}</td>
                   <td style={{ ...cellTd, color: u.role === 'admin' ? C.redact : C.muted }}>{u.role}</td>
+                  <td style={cellTd}>
+                    <span style={{
+                      padding: '2px 7px',
+                      borderRadius: '5px',
+                      fontSize: '0.74rem',
+                      fontWeight: 700,
+                      background: 'rgba(0, 242, 254, 0.1)',
+                      color: '#00f2fe',
+                      border: '1px solid rgba(0, 242, 254, 0.25)',
+                    }}>
+                      {u.action_mode || 'HASH'}
+                    </span>
+                  </td>
                   <td style={{ ...cellTd, textAlign: 'right' }}>{u.requests}</td>
                   <td style={{ ...cellTd, textAlign: 'right', color: u.violations > 0 ? C.block : C.muted }}>{u.violations}</td>
                   <td style={{ ...cellTd, textAlign: 'right' }}>{u.pii_detected}</td>
@@ -866,17 +880,51 @@ export function UserView({ authedFetch, user, onOpenEvent }) {
   const [tokens, setTokens] = useState(null);
   const [loading, setLoading] = useState(true);
   const [sessionOpen, setSessionOpen] = useState(false);
+  const [userMode, setUserMode] = useState(user.action_mode || 'HASH');
+  const [hipaa, setHipaa] = useState(user.hipaa_enabled !== false);
+  const [dpdp, setDpdp] = useState(user.dpdp_enabled !== false);
+  const [modeSaved, setModeSaved] = useState('');
+  const [compSaved, setCompSaved] = useState('');
 
   usePoll(async (isCancelled) => {
-    const [s, t] = await Promise.all([
+    const [s, t, c] = await Promise.all([
       authedFetch(`/api/stats?user_uuid=${user.user_uuid}`),
       authedFetch(`/api/users/${user.user_uuid}/tokens`),
+      authedFetch(`/api/users/${user.user_uuid}/compliance`),
     ]);
     if (isCancelled()) return;
     if (s.ok) setStats(await s.json());
     if (t.ok) setTokens(await t.json());
+    if (c.ok) {
+      const comp = await c.json();
+      setHipaa(comp.hipaa_enabled !== false);
+      setDpdp(comp.dpdp_enabled !== false);
+    }
     setLoading(false);
   }, [user.user_uuid, authedFetch]);
+
+  const saveMode = async (value) => {
+    setUserMode(value);
+    const res = await authedFetch(`/api/users/${user.user_uuid}/action-mode`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode: value }),
+    });
+    setModeSaved(res.ok ? '✓ Method updated' : `Error saving (HTTP ${res.status})`);
+    setTimeout(() => setModeSaved(''), 2500);
+  };
+
+  const saveCompliance = async (nextHipaa, nextDpdp) => {
+    setHipaa(nextHipaa);
+    setDpdp(nextDpdp);
+    const res = await authedFetch(`/api/users/${user.user_uuid}/compliance`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ hipaa_enabled: nextHipaa, dpdp_enabled: nextDpdp }),
+    });
+    setCompSaved(res.ok ? '✓ Compliance updated' : `Error (HTTP ${res.status})`);
+    setTimeout(() => setCompSaved(''), 2500);
+  };
 
   if (loading && !stats) {
     return <Loader text="Loading user details from database…" />;
@@ -885,7 +933,7 @@ export function UserView({ authedFetch, user, onOpenEvent }) {
   const d = stats?.decision_counts || {};
   return (
     <>
-      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', alignItems: 'center' }}>
         <button onClick={() => resetRating(authedFetch, user)} style={{ ...btn, background: 'transparent', color: C.block, border: `1px solid ${C.border}` }}>
           Reset rating
         </button>
@@ -898,6 +946,72 @@ export function UserView({ authedFetch, user, onOpenEvent }) {
         <Kpi label="Average tokens per session" value={Math.round(tokens?.average_tokens_per_session ?? 0).toLocaleString()} />
         <Kpi label="Average latency" value={`${Math.round(stats?.avg_latency_ms ?? 0)} ms`} />
       </div>
+
+      {/* Admin Governance & PII Method Configuration */}
+      <Card
+        title="Admin Governance & PII Policy Controls"
+        action={
+          <span style={{ color: modeSaved || compSaved ? C.allow : '#00f2fe', fontSize: '0.82rem', fontWeight: 600 }}>
+            {modeSaved || compSaved || `Active: ${userMode}`}
+          </span>
+        }
+      >
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' }}>
+          <div>
+            <label style={{ display: 'block', color: C.muted, fontSize: '0.82rem', fontWeight: 600, marginBottom: '8px' }}>
+              PII / PHI Governance Method
+            </label>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+              {[
+                { key: 'HASH', label: 'HASH (Default)', desc: 'SHA-256 masking' },
+                { key: 'REDACT', label: 'REDACT', desc: 'Static tokens' },
+                { key: 'BLOCK', label: 'BLOCK', desc: 'Drop on detection' },
+                { key: 'LOG_ONLY', label: 'LOG ONLY', desc: 'Audit stealth' },
+              ].map(opt => (
+                <button
+                  key={opt.key}
+                  onClick={() => saveMode(opt.key)}
+                  style={{
+                    padding: '10px 12px',
+                    borderRadius: '8px',
+                    border: userMode === opt.key ? '1px solid #00f2fe' : `1px solid ${C.border}`,
+                    background: userMode === opt.key ? 'rgba(0, 242, 254, 0.12)' : 'rgba(255, 255, 255, 0.03)',
+                    color: userMode === opt.key ? '#00f2fe' : C.muted,
+                    cursor: 'pointer',
+                    textAlign: 'left',
+                    transition: 'all 0.15s ease',
+                  }}
+                >
+                  <div style={{ fontWeight: 700, fontSize: '0.86rem' }}>{opt.label}</div>
+                  <div style={{ fontSize: '0.74rem', opacity: 0.8, marginTop: '2px' }}>{opt.desc}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label style={{ display: 'block', color: C.muted, fontSize: '0.82rem', fontWeight: 600, marginBottom: '8px' }}>
+              Compliance Inspection Frameworks
+            </label>
+            <div style={{ display: 'grid', gap: '8px' }}>
+              <ToggleSwitch
+                checked={hipaa}
+                onChange={next => saveCompliance(next, dpdp)}
+                label="HIPAA Compliance (US PHI)"
+                description="Medical & patient record identifiers (MRN, clinical dates, SSN...)"
+                icon="🏥"
+              />
+              <ToggleSwitch
+                checked={dpdp}
+                onChange={next => saveCompliance(hipaa, next)}
+                label="DPDP Compliance (India 2023)"
+                description="Aadhaar, PAN, UPI, Indian Mobile, PIN..."
+                icon="🇮🇳"
+              />
+            </div>
+          </div>
+        </div>
+      </Card>
+
       <div style={{ display: 'grid', gridTemplateColumns: sessionOpen ? 'minmax(0, 1fr)' : 'minmax(0, 1fr) minmax(0, 1fr)', gap: '18px' }}>
         <Card title="Sessions"><SessionsView authedFetch={authedFetch} uuid={user.user_uuid} onOpenChange={setSessionOpen} /></Card>
         {!sessionOpen && <Card title="Categories found"><Bars items={Object.entries(stats?.category_counts || {}).map(([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value)} empty="No PII found for this user." /></Card>}
@@ -1052,11 +1166,36 @@ export function OverviewUser({ authedFetch, me, onOpenEvent }) {
           </Card>
 
           <Card title="How PII is handled for you">
-            <select value={mode} onChange={e => saveMode(e.target.value)} style={{ ...inputStyle, width: '100%' }}>
-              {modes.map(([value, text]) => <option key={value} value={value}>{text}</option>)}
-            </select>
-            <div style={{ color: C.allow, fontSize: '0.82rem', marginTop: '8px', minHeight: '1em' }}>{saved}</div>
-            <div style={{ color: C.faint, fontSize: '0.82rem', marginTop: '6px' }}>Applies to your next request. A request can still override it with the X-Action-Mode header, if it sends one.</div>
+            {me?.role === 'admin' ? (
+              <>
+                <select value={mode || 'HASH'} onChange={e => saveMode(e.target.value)} style={{ ...inputStyle, width: '100%' }}>
+                  {modes.map(([value, text]) => <option key={value} value={value}>{text}</option>)}
+                </select>
+                <div style={{ color: C.allow, fontSize: '0.82rem', marginTop: '8px', minHeight: '1em' }}>{saved}</div>
+                <div style={{ color: C.faint, fontSize: '0.82rem', marginTop: '6px' }}>Applies to your next request. (Administrator access)</div>
+              </>
+            ) : (
+              <div style={{ display: 'grid', gap: '8px' }}>
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '10px',
+                  padding: '12px 14px',
+                  borderRadius: '8px',
+                  background: 'rgba(0, 242, 254, 0.06)',
+                  border: '1px solid rgba(0, 242, 254, 0.2)',
+                  color: '#00f2fe',
+                  fontWeight: 700,
+                  fontSize: '0.90rem',
+                }}>
+                  <span>🔒</span>
+                  <span>Enforced Method: {mode || 'HASH'}</span>
+                </div>
+                <div style={{ color: C.muted, fontSize: '0.80rem' }}>
+                  Governance policies are configured and enforced by your organization's Administrator.
+                </div>
+              </div>
+            )}
           </Card>
         </div>
 
@@ -1182,7 +1321,7 @@ export function OverviewAdmin({ authedFetch, onOpenEvent, onOpenUser }) {
 
 export function TestView({ authedFetch }) {
   const [direction, setDirection] = useState('ingress');
-  const [mode, setMode] = useState('REDACT');
+  const [mode, setMode] = useState('HASH');
   const [prompt, setPrompt] = useState('Patient Saurabh Shisode (DOB: 04/12/1985), email saurabh@example.com, phone 555-123-4567, id 512592');
   const [result, setResult] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -1228,9 +1367,9 @@ export function TestView({ authedFetch }) {
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <span style={{ fontSize: '0.82rem', color: C.muted }}>Action Mode:</span>
           <select value={mode} onChange={e => setMode(e.target.value)} style={inputStyle}>
+            <option value="HASH">HASH (Default)</option>
             <option value="REDACT">REDACT</option>
             <option value="BLOCK">BLOCK</option>
-            <option value="HASH">HASH</option>
             <option value="LOG_ONLY">LOG_ONLY</option>
           </select>
         </div>
@@ -1555,6 +1694,8 @@ export function TrustAnalyticsView({ authedFetch, me, isAdmin, initialUuid }) {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [reloadKey, setReloadKey] = useState(0);
+  const [activeMode, setActiveMode] = useState('HASH');
+  const [modeSaved, setModeSaved] = useState('');
 
   useEffect(() => {
     if (isAdmin) {
@@ -1577,6 +1718,7 @@ export function TrustAnalyticsView({ authedFetch, me, isAdmin, initialUuid }) {
       .then(res => {
         if (active && res) {
           setData(res);
+          setActiveMode(res.action_mode || 'HASH');
           setLoading(false);
         }
       })
@@ -1585,6 +1727,26 @@ export function TrustAnalyticsView({ authedFetch, me, isAdmin, initialUuid }) {
       });
     return () => { active = false; };
   }, [selectedUuid, me?.user_uuid, authedFetch, reloadKey]);
+
+  const saveUserMode = async (nextMode) => {
+    if (!isAdmin) return;
+    const targetUuid = selectedUuid || me?.user_uuid;
+    if (!targetUuid) return;
+    setActiveMode(nextMode);
+    setData(prev => prev ? { ...prev, action_mode: nextMode } : prev);
+    const res = await authedFetch(`/api/users/${targetUuid}/action-mode`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode: nextMode }),
+    });
+    if (res.ok) {
+      setModeSaved(`✓ Governance method set to ${nextMode}`);
+      setTimeout(() => setModeSaved(''), 2500);
+    } else {
+      setModeSaved(`Error updating method (HTTP ${res.status})`);
+      setTimeout(() => setModeSaved(''), 2500);
+    }
+  };
 
   const tokens = data?.tokens || {};
   const metrics = data?.metrics || {};
@@ -1673,7 +1835,7 @@ export function TrustAnalyticsView({ authedFetch, me, isAdmin, initialUuid }) {
                 border: '1px solid rgba(168, 85, 247, 0.3)',
                 fontWeight: 600,
               }}>
-                MODE: {data?.action_mode || me?.action_mode || 'DEFAULT'}
+                MODE: {activeMode || data?.action_mode || me?.action_mode || 'HASH'}
               </span>
             </div>
             <div style={{ fontSize: '0.78rem', color: C.faint, fontFamily: mono, marginTop: '2px' }}>
@@ -1698,6 +1860,120 @@ export function TrustAnalyticsView({ authedFetch, me, isAdmin, initialUuid }) {
                 Reset rating
               </button>
             )}
+          </div>
+        )}
+      </div>
+
+      {/* Governance PII Method Control Bar (Admin interactive, User read-only) */}
+      <div style={{
+        background: 'rgba(12, 19, 39, 0.75)',
+        border: `1px solid ${C.border}`,
+        borderRadius: '12px',
+        padding: '16px 20px',
+        backdropFilter: 'blur(16px)',
+        display: 'flex',
+        flexWrap: 'wrap',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: '16px',
+      }}>
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{ fontSize: '0.84rem', fontWeight: 700, color: '#f8fafc', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+              Governance PII Method
+            </span>
+            {isAdmin ? (
+              <span style={{
+                fontSize: '0.70rem',
+                padding: '2px 7px',
+                borderRadius: '6px',
+                background: 'rgba(0, 242, 254, 0.15)',
+                color: '#00f2fe',
+                fontWeight: 700,
+              }}>
+                ADMIN CONFIGURABLE
+              </span>
+            ) : (
+              <span style={{
+                fontSize: '0.70rem',
+                padding: '2px 7px',
+                borderRadius: '6px',
+                background: 'rgba(168, 85, 247, 0.15)',
+                color: '#c084fc',
+                fontWeight: 700,
+              }}>
+                ENFORCED POLICY
+              </span>
+            )}
+            {modeSaved && (
+              <span style={{ fontSize: '0.80rem', color: C.allow, fontWeight: 600, marginLeft: '6px' }}>
+                {modeSaved}
+              </span>
+            )}
+          </div>
+          <div style={{ color: C.muted, fontSize: '0.78rem', marginTop: '4px' }}>
+            {isAdmin
+              ? `Select how ${data?.email || 'this user'}'s PII/PHI is masked and audited in real-time.`
+              : 'Your active privacy protection and compliance method enforced by organizational policy.'}
+          </div>
+        </div>
+
+        {isAdmin ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+            {[
+              { key: 'HASH', label: 'HASH (Default)', icon: '🔒', hint: 'SHA-256 Masking' },
+              { key: 'REDACT', label: 'REDACT', icon: '✂️', hint: 'Static Tokens' },
+              { key: 'BLOCK', label: 'BLOCK', icon: '🚫', hint: 'Drop on PII' },
+              { key: 'LOG_ONLY', label: 'LOG ONLY', icon: '👁️', hint: 'Audit Stealth' },
+            ].map(opt => {
+              const active = (activeMode || 'HASH').toUpperCase() === opt.key;
+              return (
+                <button
+                  key={opt.key}
+                  onClick={() => saveUserMode(opt.key)}
+                  title={`${opt.label}: ${opt.hint}`}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    padding: '8px 14px',
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    fontSize: '0.82rem',
+                    fontWeight: active ? 700 : 500,
+                    border: active ? '1px solid #00f2fe' : `1px solid ${C.border}`,
+                    background: active
+                      ? 'linear-gradient(135deg, rgba(0, 242, 254, 0.18), rgba(168, 85, 247, 0.12))'
+                      : 'rgba(255, 255, 255, 0.04)',
+                    color: active ? '#ffffff' : C.muted,
+                    boxShadow: active ? '0 0 12px rgba(0, 242, 254, 0.25)' : 'none',
+                    transition: 'all 0.15s ease',
+                  }}
+                >
+                  <span>{opt.icon}</span>
+                  <span>{opt.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        ) : (
+          <div style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '8px',
+            padding: '8px 16px',
+            borderRadius: '8px',
+            background: 'rgba(0, 242, 254, 0.08)',
+            border: '1px solid rgba(0, 242, 254, 0.25)',
+            color: '#00f2fe',
+            fontSize: '0.86rem',
+            fontWeight: 700,
+          }}>
+            <span>🔒</span>
+            <span>Method: {activeMode || 'HASH'}</span>
+            <span style={{ fontSize: '0.74rem', color: C.muted, fontWeight: 500 }}>
+              (Managed by Administrator)
+            </span>
           </div>
         )}
       </div>

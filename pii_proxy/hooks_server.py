@@ -41,12 +41,12 @@ detector.detect("warm up Jane Smith 912-34-5678 (614) 555-0192 a@b.com", aggress
 
 # REDACT, not ANONYMIZE: ANONYMIZE restores the original value into completions/
 # results before returning them, which would defeat the leak checks here.
-ACTION_MODE = "REDACT"
+ACTION_MODE = "HASH"
 
 BLOCK_MESSAGE = "[BLOCKED by governance: contains protected identifiers (HIPAA/DPDP)]"
 
 # --- action mode (REDACT / HASH / BLOCK / LOG_ONLY) --------------------------------------------
-# Precedence: the user's saved mode (dashboard) -> global mode -> REDACT. User modes are cached in
+# Precedence: the user's saved mode (dashboard) -> global mode -> HASH. User modes are cached in
 # memory and refreshed in the background, so a hook never waits on the database for this.
 # ANONYMIZE behaves as REDACT here: restoring real values would defeat the leak checks.
 _USER_MODES: Dict[str, str] = {}
@@ -76,8 +76,8 @@ def _frameworks_for(user_id: str) -> tuple:
 
 
 def _mode_for(user_id: str) -> str:
-    mode = (_USER_MODES.get(user_id) or config.PII_ACTION_MODE or "REDACT").upper()
-    return mode if mode in ("REDACT", "HASH", "BLOCK", "LOG_ONLY") else "REDACT"
+    mode = (_USER_MODES.get(user_id) or config.PII_ACTION_MODE or "HASH").upper()
+    return mode if mode in ("REDACT", "HASH", "BLOCK", "LOG_ONLY") else "HASH"
 
 
 # The hook contract sends tool_risk (low/medium/high) on every tool call.

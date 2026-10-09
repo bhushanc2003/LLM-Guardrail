@@ -722,15 +722,15 @@ export function ToggleSwitch({ checked, onChange, label, description, icon = 'ðŸ
 export function AdrishyaLogo({ size = 'default', showSubtitle = true, collapsed = false, onClick = null, style = {} }) {
   const isLarge = size === 'large';
   const isSmall = size === 'small';
-  const boxSize = isLarge ? '46px' : isSmall ? '32px' : '38px';
-  const iconSize = isLarge ? 24 : isSmall ? 18 : 22;
+  const boxSize = isLarge ? '44px' : isSmall ? '28px' : '32px';
+  const iconSize = isLarge ? 22 : isSmall ? 15 : 18;
 
   return (
     <div
       style={{
         display: 'inline-flex',
         alignItems: 'center',
-        gap: isLarge ? '14px' : '10px',
+        gap: isLarge ? '12px' : isSmall ? '8px' : '9px',
         cursor: onClick ? 'pointer' : 'default',
         userSelect: 'none',
         ...style,
@@ -741,12 +741,12 @@ export function AdrishyaLogo({ size = 'default', showSubtitle = true, collapsed 
         style={{
           width: boxSize,
           height: boxSize,
-          borderRadius: isLarge ? '14px' : '10px',
+          borderRadius: isLarge ? '12px' : isSmall ? '8px' : '9px',
           background: 'linear-gradient(135deg, #00f2fe, #a855f7)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          boxShadow: '0 0 18px rgba(0, 242, 254, 0.42), inset 0 1px 2px rgba(255, 255, 255, 0.45)',
+          boxShadow: '0 0 14px rgba(0, 242, 254, 0.38), inset 0 1px 2px rgba(255, 255, 255, 0.45)',
           flex: 'none',
           transition: 'transform 0.2s ease, box-shadow 0.2s ease',
         }}
@@ -759,11 +759,11 @@ export function AdrishyaLogo({ size = 'default', showSubtitle = true, collapsed 
           <div
             style={{
               fontWeight: 800,
-              fontSize: isLarge ? '1.5rem' : isSmall ? '0.92rem' : '1.05rem',
+              fontSize: isLarge ? '1.4rem' : isSmall ? '0.88rem' : '0.98rem',
               background: 'linear-gradient(135deg, #ffffff 20%, #00f2fe 65%, #a855f7 100%)',
               WebkitBackgroundClip: 'text',
               WebkitTextFillColor: 'transparent',
-              letterSpacing: isLarge ? '-0.02em' : '0.01em',
+              letterSpacing: isLarge ? '-0.02em' : '0.005em',
               lineHeight: 1.15,
             }}
           >
@@ -773,11 +773,11 @@ export function AdrishyaLogo({ size = 'default', showSubtitle = true, collapsed 
             <div
               style={{
                 color: C.muted,
-                fontSize: isLarge ? '0.78rem' : '0.70rem',
+                fontSize: isLarge ? '0.74rem' : isSmall ? '0.62rem' : '0.65rem',
                 fontWeight: 600,
                 textTransform: 'uppercase',
-                letterSpacing: '0.08em',
-                marginTop: '2px',
+                letterSpacing: '0.06em',
+                marginTop: '1px',
               }}
             >
               Invisible Privacy Layer

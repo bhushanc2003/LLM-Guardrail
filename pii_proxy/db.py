@@ -90,7 +90,7 @@ class DBUser(Base):
     name = sa.Column(sa.Text, nullable=True)
     user_uuid = sa.Column(sa.Text, unique=True, nullable=False, index=True)
     role = sa.Column(sa.Text, nullable=False, default="user")
-    action_mode = sa.Column(sa.Text, nullable=True)
+    action_mode = sa.Column(sa.Text, nullable=True, default="HASH")
     hipaa_enabled = sa.Column(sa.Boolean, nullable=True, default=True)
     dpdp_enabled = sa.Column(sa.Boolean, nullable=True, default=True)
     rating_reset_at = sa.Column(sa.DateTime(timezone=True), nullable=True)  # admin reset: rating counts only data after this

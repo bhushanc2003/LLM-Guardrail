@@ -10,7 +10,6 @@ import {
   IconTest,
   IconSun,
   IconMoon,
-  IconMenu,
   IconChevronLeft,
   IconChevronRight,
 } from './ui.jsx';
@@ -66,6 +65,8 @@ export default function Shell({ items, active, onNav, title, subtitle, userButto
     });
   };
 
+  const PageIcon = navIcons[active] || IconOverview;
+
   return (
     <div style={{
       display: 'flex',
@@ -76,9 +77,11 @@ export default function Shell({ items, active, onNav, title, subtitle, userButto
     }}>
       {/* Cyber Glassmorphic Sidebar (Collapsable) */}
       <aside style={{
-        width: collapsed ? '72px' : '240px',
+        width: collapsed ? '56px' : '192px',
         flex: 'none',
-        background: 'linear-gradient(180deg, rgba(9, 14, 33, 0.88) 0%, rgba(5, 8, 20, 0.95) 100%)',
+        background: theme === 'dark'
+          ? 'linear-gradient(180deg, rgba(9, 14, 33, 0.88) 0%, rgba(5, 8, 20, 0.95) 100%)'
+          : 'linear-gradient(180deg, rgba(255, 255, 255, 0.9) 0%, rgba(248, 250, 252, 0.95) 100%)',
         backdropFilter: 'blur(20px)',
         WebkitBackdropFilter: 'blur(20px)',
         borderRight: `1px solid ${C.border}`,
@@ -88,51 +91,83 @@ export default function Shell({ items, active, onNav, title, subtitle, userButto
         top: 0,
         height: '100vh',
         zIndex: 20,
-        transition: 'width 0.24s cubic-bezier(0.4, 0, 0.2, 1)',
-        overflow: 'hidden',
+        transition: 'width 0.22s cubic-bezier(0.4, 0, 0.2, 1)',
+        overflow: 'visible',
       }}>
+        {/* Toggle Arrow Button Mounted Directly on Sidebar Right Vertical Border Line */}
+        <button
+          onClick={toggle}
+          title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          style={{
+            position: 'absolute',
+            top: '20px',
+            right: '-10px',
+            zIndex: 50,
+            width: '20px',
+            height: '20px',
+            borderRadius: '50%',
+            background: theme === 'dark' ? '#090e21' : '#ffffff',
+            border: theme === 'dark' ? '1px solid rgba(0, 242, 254, 0.45)' : '1px solid rgba(0, 180, 216, 0.45)',
+            color: theme === 'dark' ? '#00f2fe' : '#0284c7',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            boxShadow: theme === 'dark'
+              ? '0 2px 8px rgba(0, 0, 0, 0.6), 0 0 8px rgba(0, 242, 254, 0.25)'
+              : '0 2px 8px rgba(0, 0, 0, 0.12), 0 0 8px rgba(2, 132, 199, 0.18)',
+            transition: 'all 0.18s ease',
+            padding: 0,
+          }}
+          onMouseEnter={e => {
+            e.currentTarget.style.transform = 'scale(1.12)';
+            e.currentTarget.style.borderColor = theme === 'dark' ? '#00f2fe' : '#0284c7';
+            e.currentTarget.style.boxShadow = theme === 'dark'
+              ? '0 2px 10px rgba(0, 0, 0, 0.7), 0 0 12px rgba(0, 242, 254, 0.6)'
+              : '0 2px 10px rgba(0, 0, 0, 0.2), 0 0 12px rgba(2, 132, 199, 0.4)';
+          }}
+          onMouseLeave={e => {
+            e.currentTarget.style.transform = 'scale(1)';
+            e.currentTarget.style.borderColor = theme === 'dark' ? 'rgba(0, 242, 254, 0.45)' : 'rgba(0, 180, 216, 0.45)';
+            e.currentTarget.style.boxShadow = theme === 'dark'
+              ? '0 2px 8px rgba(0, 0, 0, 0.6), 0 0 8px rgba(0, 242, 254, 0.25)'
+              : '0 2px 8px rgba(0, 0, 0, 0.12), 0 0 8px rgba(2, 132, 199, 0.18)';
+          }}
+        >
+          {collapsed ? (
+            <IconChevronRight size={11} color={theme === 'dark' ? '#00f2fe' : '#0284c7'} strokeWidth={2.6} />
+          ) : (
+            <IconChevronLeft size={11} color={theme === 'dark' ? '#00f2fe' : '#0284c7'} strokeWidth={2.6} />
+          )}
+        </button>
+
         {/* Brand Header */}
         <div style={{
-          padding: collapsed ? '20px 14px' : '20px 18px',
+          padding: collapsed ? '14px 6px' : '14px 12px',
           borderBottom: `1px solid ${C.border}`,
           display: 'flex',
           alignItems: 'center',
-          justifyContent: collapsed ? 'center' : 'space-between',
+          justifyContent: collapsed ? 'center' : 'flex-start',
           gap: '8px',
-          minHeight: '44px',
+          minHeight: '40px',
+          overflow: 'hidden',
         }}>
           <AdrishyaLogo
             collapsed={collapsed}
             onClick={toggle}
             style={{ cursor: 'pointer' }}
           />
-
-          {!collapsed && (
-            <button
-              onClick={toggle}
-              title="Collapse sidebar"
-              style={{
-                background: 'rgba(0, 242, 254, 0.08)',
-                border: '1px solid rgba(0, 242, 254, 0.25)',
-                color: '#00f2fe',
-                borderRadius: '8px',
-                width: '28px',
-                height: '28px',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                flex: 'none',
-                transition: 'all 0.15s ease',
-              }}
-            >
-              <IconChevronLeft size={14} color="#00f2fe" strokeWidth={2.2} />
-            </button>
-          )}
         </div>
 
         {/* Navigation Items */}
-        <nav style={{ padding: collapsed ? '16px 8px' : '16px 12px', display: 'grid', gap: '6px' }}>
+        <nav style={{
+          padding: collapsed ? '10px 4px' : '10px 6px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '3px',
+          overflowY: 'auto',
+          flex: 1,
+        }}>
           {items.map(item => {
             const on = item.key === active;
             const IconComp = navIcons[item.key] || IconOverview;
@@ -151,17 +186,22 @@ export default function Shell({ items, active, onNav, title, subtitle, userButto
                   borderLeft: collapsed ? 'none' : `3px solid ${on ? '#00f2fe' : 'transparent'}`,
                   borderBottom: collapsed && on ? '2px solid #00f2fe' : 'none',
                   boxShadow: on ? 'inset 0 0 16px rgba(0, 242, 254, 0.06)' : 'none',
-                  padding: collapsed ? '12px 0' : '10px 14px',
-                  borderRadius: '8px',
+                  height: '34px',
+                  minHeight: '34px',
+                  maxHeight: '34px',
+                  padding: collapsed ? '0' : '0 10px',
+                  boxSizing: 'border-box',
+                  borderRadius: '6px',
                   cursor: 'pointer',
-                  fontSize: '0.92rem',
-                  fontWeight: on ? 700 : 500,
+                  fontSize: '0.84rem',
+                  fontWeight: on ? 600 : 500,
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: collapsed ? 'center' : 'flex-start',
-                  gap: '10px',
-                  transition: 'all 0.18s ease',
+                  gap: '8px',
+                  transition: 'all 0.16s ease',
                   width: '100%',
+                  flex: 'none',
                 }}
               >
                 <span style={{
@@ -171,7 +211,7 @@ export default function Shell({ items, active, onNav, title, subtitle, userButto
                   filter: on ? 'drop-shadow(0 0 8px rgba(0,242,254,0.6))' : 'none',
                   flex: 'none',
                 }}>
-                  <IconComp size={18} color={on ? '#00f2fe' : 'currentColor'} strokeWidth={on ? 2.2 : 1.8} />
+                  <IconComp size={16} color={on ? '#00f2fe' : 'currentColor'} strokeWidth={on ? 2.2 : 1.8} />
                 </span>
                 {!collapsed && (
                   <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -183,52 +223,27 @@ export default function Shell({ items, active, onNav, title, subtitle, userButto
           })}
         </nav>
 
-        {/* Collapsed expand button at bottom of nav */}
-        {collapsed && (
-          <div style={{ display: 'flex', justifyContent: 'center', padding: '8px 0' }}>
-            <button
-              onClick={toggle}
-              title="Expand sidebar"
-              style={{
-                background: 'rgba(0, 242, 254, 0.08)',
-                border: '1px solid rgba(0, 242, 254, 0.25)',
-                color: '#00f2fe',
-                borderRadius: '8px',
-                width: '34px',
-                height: '34px',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                transition: 'all 0.15s ease',
-              }}
-            >
-              <IconChevronRight size={16} color="#00f2fe" strokeWidth={2.2} />
-            </button>
-          </div>
-        )}
-
         {/* Bottom System Status */}
-        <div style={{ marginTop: 'auto', padding: collapsed ? '14px 8px' : '16px 18px', borderTop: `1px solid ${C.border}` }}>
+        <div style={{ marginTop: 'auto', padding: collapsed ? '10px 4px' : '10px 8px', borderTop: `1px solid ${C.border}` }}>
           <div
             title="Proxy Engine Active"
             style={{
               background: 'rgba(16, 185, 129, 0.08)',
               border: '1px solid rgba(16, 185, 129, 0.25)',
-              borderRadius: '8px',
-              padding: collapsed ? '8px 0' : '8px 12px',
+              borderRadius: '6px',
+              padding: collapsed ? '6px 0' : '6px 8px',
               display: 'flex',
               alignItems: 'center',
               justifyContent: collapsed ? 'center' : 'flex-start',
-              gap: '8px',
-              fontSize: '0.78rem',
+              gap: '6px',
+              fontSize: '0.72rem',
               color: '#34d399',
               fontWeight: 600,
             }}
           >
             <span style={{
-              width: '7px',
-              height: '7px',
+              width: '6px',
+              height: '6px',
               borderRadius: '50%',
               background: '#10b981',
               boxShadow: '0 0 8px #10b981',
@@ -244,12 +259,12 @@ export default function Shell({ items, active, onNav, title, subtitle, userButto
       <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
         {/* Sticky Glassmorphic Header */}
         <header style={{
-          height: '68px',
+          height: '64px',
           flex: 'none',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          padding: '0 32px',
+          padding: '0 28px',
           borderBottom: `1px solid ${C.border}`,
           background: 'rgba(9, 14, 33, 0.75)',
           backdropFilter: 'blur(20px)',
@@ -258,38 +273,31 @@ export default function Shell({ items, active, onNav, title, subtitle, userButto
           top: 0,
           zIndex: 10,
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-            <button
-              onClick={toggle}
-              title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-              style={{
-                background: 'rgba(255, 255, 255, 0.05)',
-                border: `1px solid ${C.border}`,
-                color: C.muted,
-                borderRadius: '8px',
-                width: '32px',
-                height: '32px',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                transition: 'all 0.15s ease',
-              }}
-            >
-              <IconMenu size={16} color={C.muted} strokeWidth={2} />
-            </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <span style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: theme === 'dark' ? '#00f2fe' : '#0284c7',
+              filter: theme === 'dark' ? 'drop-shadow(0 0 6px rgba(0, 242, 254, 0.45))' : 'none',
+              flex: 'none',
+            }}>
+              <PageIcon size={19} color={theme === 'dark' ? '#00f2fe' : '#0284c7'} strokeWidth={2.2} />
+            </span>
             <div>
               <div style={{
-                fontWeight: 800,
-                fontSize: '1.18rem',
-                background: 'linear-gradient(135deg, #ffffff 40%, #cbd5e1 100%)',
+                fontWeight: 700,
+                fontSize: '1.10rem',
+                background: theme === 'dark'
+                  ? 'linear-gradient(135deg, #ffffff 40%, #cbd5e1 100%)'
+                  : 'linear-gradient(135deg, #0f172a 40%, #334155 100%)',
                 WebkitBackgroundClip: 'text',
                 WebkitTextFillColor: 'transparent',
                 letterSpacing: '-0.01em',
               }}>
                 {title}
               </div>
-              {subtitle && <div style={{ color: C.muted, fontSize: '0.82rem', marginTop: '2px', fontWeight: 500 }}>{subtitle}</div>}
+              {subtitle && <div style={{ color: C.muted, fontSize: '0.78rem', marginTop: '1px', fontWeight: 500 }}>{subtitle}</div>}
             </div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>

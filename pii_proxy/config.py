@@ -15,7 +15,7 @@ class Config:
         self.HOST: str = os.getenv("HOST", "0.0.0.0")
         self.PORT: int = int(os.getenv("PORT", "8000"))
         
-        self._pii_action_mode: str = os.getenv("PII_ACTION_MODE", "REDACT")
+        self._pii_action_mode: str = os.getenv("PII_ACTION_MODE", "HASH")
         self.DEANONYMIZE_OUTPUT: bool = os.getenv("DEANONYMIZE_OUTPUT", "true").lower() == "true"
         self.ENABLE_AUDIT_LOG: bool = os.getenv("ENABLE_AUDIT_LOG", "true").lower() == "true"
 

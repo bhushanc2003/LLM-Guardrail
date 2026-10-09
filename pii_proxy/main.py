@@ -71,7 +71,7 @@ anonymizer = PIIAnonymizer(detector=detector)
 
 class TestInspectRequest(BaseModel):
     prompt: str
-    mode: Optional[str] = "REDACT"
+    mode: Optional[str] = "HASH"
     user_id: Optional[str] = "user_demo"
     check_hipaa: Optional[bool] = None
     check_dpdp: Optional[bool] = None
@@ -287,6 +287,9 @@ async def admin_list_users(admin: DBUser = Depends(require_admin)):
                 DBUser.email,
                 DBUser.name,
                 DBUser.role,
+                DBUser.action_mode,
+                DBUser.hipaa_enabled,
+                DBUser.dpdp_enabled,
                 DBUser.created_at,
                 func.count(DBEvent.id).label("requests"),
                 func.coalesce(func.sum(DBEvent.pii_count), 0).label("pii_detected"),
@@ -317,6 +320,9 @@ async def admin_list_users(admin: DBUser = Depends(require_admin)):
                 "email": r.email,
                 "name": r.name,
                 "role": r.role,
+                "action_mode": r.action_mode or config.PII_ACTION_MODE,
+                "hipaa_enabled": r.hipaa_enabled if r.hipaa_enabled is not None else True,
+                "dpdp_enabled": r.dpdp_enabled if r.dpdp_enabled is not None else True,
                 "created_at": r.created_at.isoformat() if r.created_at else None,
                 "last_active": r.last_active.isoformat() if r.last_active else None,
                 "requests": r.requests,
@@ -386,8 +392,12 @@ VALID_MODES = {"REDACT", "BLOCK", "HASH", "LOG_ONLY"}
 
 @app.put("/api/users/{user_uuid}/action-mode")
 async def set_user_action_mode(user_uuid: str, req: UserActionModeRequest, user: DBUser = Depends(get_current_user)):
-    """Set how this user's PII is handled. Null goes back to the global default."""
-    assert_owner_or_admin(user, user_uuid)
+    """Set how this user's PII is handled. Admin only can set the Governance method."""
+    if user.role != "admin":
+        raise HTTPException(
+            status_code=403,
+            detail="Admin only: Only administrators have authority to configure user governance / PII action mode."
+        )
     mode = req.mode.upper() if req.mode else None
     if mode is not None and mode not in VALID_MODES:
         raise HTTPException(status_code=400, detail=f"mode must be one of {sorted(VALID_MODES)} or null")
@@ -396,9 +406,9 @@ async def set_user_action_mode(user_uuid: str, req: UserActionModeRequest, user:
         target = db.query(DBUser).filter(DBUser.user_uuid == user_uuid).first()
         if target is None:
             raise HTTPException(status_code=404, detail="user not found")
-        target.action_mode = mode
+        target.action_mode = mode or "HASH"
         db.commit()
-        return {"user_uuid": user_uuid, "action_mode": mode or config.PII_ACTION_MODE, "is_default": mode is None}
+        return {"user_uuid": user_uuid, "action_mode": target.action_mode, "is_default": mode is None}
     finally:
         db.close()
 
@@ -425,8 +435,12 @@ async def get_user_compliance(user_uuid: str, user: DBUser = Depends(get_current
 
 @app.put("/api/users/{user_uuid}/compliance")
 async def set_user_compliance(user_uuid: str, req: UserComplianceRequest, user: DBUser = Depends(get_current_user)):
-    """Update active compliance frameworks (HIPAA / DPDP) for user."""
-    assert_owner_or_admin(user, user_uuid)
+    """Update active compliance frameworks (HIPAA / DPDP) for user. Admin only."""
+    if user.role != "admin":
+        raise HTTPException(
+            status_code=403,
+            detail="Admin only: Only administrators have authority to configure compliance policies."
+        )
     db = SessionLocal()
     try:
         target = db.query(DBUser).filter(DBUser.user_uuid == user_uuid).first()
@@ -1076,6 +1090,7 @@ async def sync_user(req: UserSyncRequest, request: Request, claims: dict = Depen
                 name=req.name,
                 user_uuid=u_uuid,
                 role=assigned_role,
+                action_mode="HASH",
             )
             db.add(user)
             db.commit()
