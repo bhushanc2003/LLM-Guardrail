@@ -1,9 +1,22 @@
 # Full 50-Scenario Compliance Benchmark Report
 
-**Test Suite:** 5 Dedicated Test Cases for each of the 10 Core Identifiers (5 HIPAA + 5 DPDP = 50 Scenarios Total)
-**Comparison:** Normal Fast-Path (Advanced Mode OFF) vs. Neural SLM (Advanced Mode ON)
-**Auditing Columns:** Tracks exactly what was missed by the Normal method, and what was missed or extra-detected by the Advanced filter.
+**Test Suite:** 5 Dedicated Test Cases for each of the 10 Core Identifiers (5 HIPAA + 5 DPDP = 50 Scenarios Total)  
+**Comparison:** Normal Fast-Path (Advanced Mode OFF) vs. Neural SLM (Advanced Mode ON)  
+**Auditing Columns:** Tracks exactly what was missed by the Normal method, and what was missed or extra-detected by the Advanced filter.  
 **Date:** October 10, 2026
+
+---
+
+## Executive Summary: 50-Scenario Audit Overview
+
+| Metric | Normal Method (Fast-Path) | Advanced Filter (GLiNER Neural SLM) | Delta / Impact |
+| :--- | :---: | :---: | :---: |
+| **Total Test Prompts** | 50 scenarios | 50 scenarios | 100% evaluated |
+| **Structured Formats (SSN, MRN, Health ID, Aadhaar, PAN, UPI, PIN)** | **100% Detection** | **100% Detection** | Checksum parity |
+| **Bare Human Names (No Title Anchors)** | ❌ **0% Recall** (Missed *Sarah Connor*, *Marcus Vance*, *John Doe*, *Vikram Malhotra*, *Rohan Kulkarni*) | ✅ **100% Recall** (Captured all unstructured names) | Zero name leaks |
+| **Unanchored Cities & Facilities** | ❌ **0% Recall** (Missed *Kolkata*, *Bangalore*, *Pune*, *Chennai*, *Seattle*) | ✅ **100% Recall** (Captured all geographic entities) | High locality sensitivity |
+| **Average Latency** | **0.18 ms** (Sub-millisecond) | **41.3 ms** (~0.04s) | Fast-path for streaming; SLM for zero-trust |
+| **Negative Controls (Case #5 in all sets)** | ✅ Clean Pass-through (0% False Positives on non-PII tracking numbers, part SKUs, timestamps) | ✅ Clean Pass-through (0% False Positives on clinical drugs & non-PII codes) | High precision integrity |
 
 ---
 
