@@ -89,41 +89,74 @@
 
 ---
 
-## 4. Deep-Dive: The Hybrid Detection Engine
+## 4. Deep-Dive: Where Regex Fits in the Detection Pipeline
 
-If the judges ask: *"Is this just a bunch of regular expressions?"*
-Your answer: **"Absolutely not. It is a three-tiered hybrid architecture that uses deterministic mathematics where accuracy is mandatory, and deep learning where language is unstructured."**
+If the judges ask: *"What role does Regex play? Are you using it?"*
+Your answer:
+> **"Yes! Regex is our core high-speed workhorse engine. It serves as our primary $O(N)$ Fast-Path Foundation across 25+ pre-compiled grammars. But we never use naive regex alone—we use Regex as a high-precision candidate extractor paired with mathematical checksum validation, contextual linguistic filtering, and deep learning NLP."**
 
-### Tier 0: Algorithmic Checksums & Mathematical Validation
-1. **Aadhaar Number (12-digit Indian UID)**:
-   - Does NOT simply match 12 digits.
-   - Evaluated using the **Verhoeff Dihedral Group ($D_5$) checksum algorithm** with permutations and multiplications over group $D_5$. Random numbers fail instantly.
-2. **Payment Card Numbers (RuPay, Visa, Mastercard, Amex)**:
-   - Evaluated with the **Luhn Mod-10 algorithm**. Rejects card-like numbers that do not pass banking validation.
-3. **Permanent Account Number (PAN)**:
-   - Enforces the **Indian Income Tax Department (ITD) 10-character grammar** (`5L-4N-1L`).
-   - The 4th character is semantically validated against legitimate entity types: `P` (Individual), `C` (Company), `H` (HUF), `F` (Firm), `A` (AOP), `T` (Trust), `B` (BOI), `L` (Local Authority), `J` (Artificial Juridical Person), `G` (Govt).
-4. **IFSC Codes**:
-   - RBI 11-character bank branch standard: 4 letters for bank, the 5th character is **strictly zero (`0`)**, and 6 alphanumeric branch characters.
-5. **Network & Protocol Formats**:
-   - RFC 5322 (Email), RFC 4122 (UUID), ITU-T E.164 (Telephony), and IPv4/IPv6 decimal and hex octet verification.
+Here is the exact 3-tier hierarchy and where Regex operates:
 
-### Tier 1: Contextual Linguistics & Semantic Boundary Anchors
-- **Disambiguating Generic Values**: Numbers like `10/02/2026` or `400001` or `18.5` are not blindly flagged. They are analyzed against **semantic contextual anchors** (`DOB:`, `Admitted:`, `Surgery Date:`, `PIN:`, `Salary:`, `CTC:`).
-- **The `NAME_STOP` Dictionary**:
-  When detecting names without explicit titles (`Dr.` or `Patient`), GuardIAn inspects runs of capitalized tokens and filters them through a **curated dictionary of over 100 medical terms, days, months, and English prepositions** (e.g., *Hypertension, Ductal, Metoprolol, Lithium, Monday, January*). This completely eliminates false-positive medical jargon.
-
-### Tier 2: Deep Learning NLP (Microsoft Presidio & spaCy)
-- Integrated via `presidio_analyzer` using spaCy's `en_core_web_sm` model (activated via `ENABLE_PRESIDIO=true`).
-- Runs statistical Named Entity Recognition (NER) for:
-  - `PERSON` (Arbitrary names in narrative paragraphs)
-  - `LOCATION` / `GPE` (Geopolitical entities, international cities)
-  - `ORGANIZATION` (Corporations and healthcare institutions)
-
-### Conflict Resolution & Span Deduplication
-When multiple matchers fire on overlapping spans of text (e.g. an address containing a city, or a number inside an account string):
-1. Matches are sorted by `start_idx asc`, `length desc`, and `confidence desc`.
-2. A non-destructive greedy interval scheduler eliminates substrings and retains the most specific, highest-confidence compliance entity.
+```text
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│                              INCOMING TEXT PROMPT / OUTPUT                             │
+└───────────────────────────────────────────┬────────────────────────────────────────────┘
+                                            │
+                                            ▼
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│  TIER 0: COMPILED REGEX FAST-PATH + MATHEMATICAL CHECKSUM VALIDATION                   │
+│  (Role of Regex: Fast Candidate Extractor in O(N) linear time)                         │
+│                                                                                        │
+│  1. Regex extracts candidate pattern:                                                  │
+│     • Aadhaar candidate:  \b[2-9]\d{3}\s\d{4}\s\d{4}\b                                 │
+│     • Card candidate:     \b\d{4}[-\s]\d{4}[-\s]\d{4}[-\s]\d{4}\b                      │
+│     • PAN candidate:      \b[A-Z]{5}[0-9]{4}[A-Z]\b                                    │
+│     • Email candidate:    \b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b           │
+│     • Phone candidate:    (?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b        │
+│     • IPv4 / IPv6:        \b(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}...       │
+│                                                                                        │
+│  2. Algorithmic Checksum Engine validates mathematical legitimacy:                     │
+│     • Verhoeff Checksum: Evaluates Dihedral D5 permutations on Aadhaar (rejects fake)  │
+│     • Luhn Mod-10 Checksum: Verifies credit/debit card banking digit validity          │
+│     • ITD Entity Validation: 4th char of PAN must match valid taxpayer entities (P/C/H)│
+│     • RBI 5th-Char Rule: IFSC branch code must strictly contain 0 at position 5        │
+└───────────────────────────────────────────┬────────────────────────────────────────────┘
+                                            │
+                                            ▼
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│  TIER 1: CONTEXT-ANCHORED REGEX + LINGUISTIC STOP-WORD FILTERING                       │
+│  (Role of Regex: Context-Aware Grammar & Lookaround Boundaries)                        │
+│                                                                                        │
+│  1. Lookarounds & Keyword Anchors:                                                     │
+│     • Prevents false positives by only firing when bound to semantic indicators:       │
+│       - Clinical Dates:   (?:Admitted|Admission|Discharged|Died)[:#\s]+(?:\d{1,2}/...)  │
+│       - Indian PIN Codes: (?:PIN|PIN Code|Postal Code)[:#\s]+[1-9][0-9]{5}\b           │
+│       - Compensation:     (?:Salary|CTC|Income)[:#\s]+(?:₹|Rs\.?|INR\s*)?[\d.,]+LPA...  │
+│       - Medical Records:  (?:MRN|Med Rec #)[:#\s]+[A-Za-z0-9-]{6,12}\b                 │
+│                                                                                        │
+│  2. NAME_STOP Dictionary Scrubbing:                                                    │
+│     • Regex scans capitalized token runs: \b[A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,3}\b       │
+│     • Filters candidates against 100+ clinical and protocol stop-words                 │
+│       (e.g., Hypertension, Ductal, Metoprolol, Monday, Patient, Records)               │
+└───────────────────────────────────────────┬────────────────────────────────────────────┘
+                                            │
+                                            ▼
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│  TIER 2: DEEP LEARNING NLP (Microsoft Presidio + spaCy NER)                            │
+│  (Role of ML: Unstructured, Narrative Entity Recognition)                              │
+│                                                                                        │
+│  • Optional statistical transformer pass (ENABLE_PRESIDIO=true)                        │
+│  • Detects freeform PERSON, LOCATION, and ORGANIZATION entities that do not follow     │
+│    any structured format or title prefixes.                                            │
+└───────────────────────────────────────────┬────────────────────────────────────────────┘
+                                            │
+                                            ▼
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│  CONFLICT RESOLUTION & SPAN DEDUPLICATION                                              │
+│                                                                                        │
+│  • Resolves overlapping matches: sorts by start_idx asc, length desc, confidence desc  │
+│  • Substrings suppressed in favor of higher-confidence compliance entities             │
+└────────────────────────────────────────────────────────────────────────────────────────┘
 
 ---
 
