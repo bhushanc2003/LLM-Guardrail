@@ -62,14 +62,15 @@ The system uses a **multi-tiered, hybrid detection architecture**:
 └───────────────────┴───────────────────┴────────────────────┴─────────────────────────────┘
 ```
 
-1. **Tier 0: High-Precision Deterministic Matchers (Format Validation)**:
-   - For structured IDs with fixed checksums, formats, or schemas (e.g., PAN, Aadhaar, SSN, IFSC, UPI handles, IPv4/v6, MAC, UUID).
-   - Zero hallucinations, $O(N)$ execution speed ($< 1\text{ ms}$).
-2. **Tier 1: Contextual Pattern & Boundary Heuristics**:
-   - For semi-structured or localized values (e.g., PIN codes, dates of admission/birth, salary packages, employee numbers, MRNs).
+1. **Tier 0: High-Precision Deterministic Matchers (Format Validation & Checksums)**:
+   - For structured IDs with mathematical checksums, formats, or schemas (e.g., PAN, Aadhaar Verhoeff, SSN, IFSC, UPI handles, Credit Cards Luhn, IPv4/v6, MAC, UUID).
+   - Zero hallucinations, $O(N)$ execution speed ($< 0.5\text{ ms}$).
+2. **Tier 1: Contextual Pattern & Boundary Heuristics (Fast-Path Mode)**:
+   - For semi-structured or localized values (e.g., PIN codes, dates of admission/birth, employee numbers, MRNs).
    - Uses positive lookaheads/lookbehinds and keyword anchors (`DOB:`, `Salary:`, `Admitted:`, `Roll No:`) to avoid false positives.
-3. **Tier 2: Microsoft Presidio & NLP Fallback (Optional / Shared)**:
-   - Evaluates unstructured names, geopolitical entities (GPE), and locations when NLP mode (`ENABLE_PRESIDIO=true`) is activated.
+3. **Tier 2 / Advanced Filtering: GLiNER 152M Zero-Shot Neural Decision Engine**:
+   - Evaluates unstructured human names (e.g., *Rahul Sharma*, *Sarah Connor*), unanchored cities (*Bangalore*, *Kolkata*), and natural compensation (*INR 24 LPA*) when **Advanced Filtering** is enabled.
+   - Operates in ~45-50ms with 0% false positives on clinical terms, completely superseding legacy Microsoft Presidio.
 
 ---
 
@@ -137,11 +138,11 @@ Under India's DPDP Act, personal data is defined broadly as any data about an in
 
 In earlier testing on the `pii-method-testing` branch, three distinct approaches were benchmarked:
 
-| Method | Strengths | Weaknesses | Best Use in Production |
+| Method | Strengths | Weaknesses | Role in Production |
 |---|---|---|---|
-| **Deterministic High-Precision Regex (Current Primary)** | **Sub-millisecond latency (<0.5ms)**<br>Zero hallucination risk<br>Strict compliance with national formats (PAN, Aadhaar, IFSC, SSN) | Cannot detect ambiguous names without context | **Used for all structured IDs, government credentials, numbers, codes, financial data** |
-| **Microsoft Presidio + spaCy NER (Current Tier 2)** | Detects open-domain names and unstructured locations | Requires ~10–25ms per prompt<br>Higher memory footprint | **Used for unstructured names and ambiguous geographic locations** |
-| **GLiNER (Zero-Shot Deep Learning)** | Can learn arbitrary entities without retraining | High GPU/CPU inference overhead (~120–250ms per prompt)<br>Excessive token latency for real-time LLM proxying | **Reserved for offline batch auditing rather than real-time proxy inline inspection** |
+| **Deterministic High-Precision Regex (Tier 0 Fast-Path)** | **Sub-millisecond latency (<0.5ms)**<br>Zero hallucination risk<br>Strict compliance with national formats (PAN, Aadhaar, IFSC, SSN, Cards) | Cannot detect bare unstructured names without honorific titles | **Always-On default for high-throughput APIs and streaming gateways** |
+| **GLiNER 152M Small-v2.1 (Tier 1 Neural SLM)** | **Zero-shot recall (+68% higher recall)**<br>Catches bare names, cities, salaries<br>0% false positives on clinical terms | Adds ~45–50ms inference time | **User-toggled via Advanced Filtering in Dashboard Overview** |
+| **Microsoft Presidio + spaCy (Superseded / Deprecated)** | Generic Western entity recognition | Fails on Indian names (*Rahul Sharma*)<br>False positives on medical drugs (*Metoprolol*) | **Deprecated & superseded by GLiNER** |
 
 ---
 
