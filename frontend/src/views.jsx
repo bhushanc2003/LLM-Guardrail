@@ -148,8 +148,9 @@ export function LogsView({ authedFetch, uuid = null, initialEvent = null, onOpen
   const cutoff = cutoffs[range] ? Date.now() - cutoffs[range] : 0;
   const q = search.trim().toLowerCase();
   const shown = rows.filter(r => {
-    if (decision === 'violations' && r.decision === 'allow') return false;
-    if (decision !== 'all' && decision !== 'violations' && r.decision !== decision) return false;
+    const d = (r.decision || (r.action_mode === 'HASH' && r.decision !== 'allow' ? 'hash' : 'redact')).toLowerCase();
+    if (decision === 'violations' && d === 'allow') return false;
+    if (decision !== 'all' && decision !== 'violations' && d !== decision) return false;
     if (userFilter && r.user_uuid !== userFilter) return false;
     if (cutoff && (!r.created_at || new Date(r.created_at).getTime() < cutoff)) return false;
     if (q) {
@@ -169,9 +170,10 @@ export function LogsView({ authedFetch, uuid = null, initialEvent = null, onOpen
         <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search prompt, category, session or user" style={{ ...inputStyle, flex: '1 1 260px' }} />
         <select value={decision} onChange={e => setDecision(e.target.value)} style={inputStyle}>
           <option value="all">All decisions</option>
-          <option value="violations">Violations (redact + block)</option>
+          <option value="violations">Violations (redact + hash + block)</option>
           <option value="allow">Allowed</option>
           <option value="redact">Redacted</option>
+          <option value="hash">Hashed</option>
           <option value="block">Blocked</option>
         </select>
         {!uuid && (
@@ -1068,9 +1070,9 @@ export function OverviewUser({ authedFetch, me, onOpenEvent }) {
                   style={{ display: 'grid', gridTemplateColumns: '150px 84px 1fr', gap: '12px', alignItems: 'center', textAlign: 'left', background: 'transparent', border: 'none', borderBottom: `1px solid ${C.border}`, padding: '11px 6px', cursor: 'pointer', color: C.text }}
                 >
                   <span style={{ color: C.muted, fontSize: '0.82rem' }}>{v.created_at ? new Date(v.created_at).toLocaleString() : ''}</span>
-                  <DecisionChip decision={v.decision} />
+                  <DecisionChip decision={v.decision || (v.action_mode === 'HASH' && v.decision !== 'allow' ? 'hash' : v.decision)} />
                   <span style={{ fontSize: '0.88rem' }}>
-                    {v.decision === 'block' ? 'Blocked, not sent' : 'Redacted'}: {(v.categories_found || []).join(', ') || 'PII'}
+                    {v.decision === 'block' ? 'Blocked, not sent' : (v.decision === 'hash' || v.action_mode === 'HASH' ? 'Hashed' : 'Redacted')}: {(v.categories_found || []).join(', ') || 'PII'}
                   </span>
                 </button>
               ))}
@@ -1143,7 +1145,7 @@ export function OverviewAdmin({ authedFetch, onOpenEvent, onOpenUser }) {
                     <span style={{ color: C.text }}>{v.user_email}</span>
                     <span style={{ color: C.muted }}> · {(v.categories_found || []).join(', ') || 'PII'}</span>
                   </span>
-                  <DecisionChip decision={v.decision} />
+                  <DecisionChip decision={v.decision || (v.action_mode === 'HASH' && v.decision !== 'allow' ? 'hash' : v.decision)} />
                 </button>
               ))}
             </div>
@@ -1461,7 +1463,7 @@ export function TrustAnalyticsView({ authedFetch, me, isAdmin, initialUuid }) {
                 border: '1px solid rgba(168, 85, 247, 0.3)',
                 fontWeight: 600,
               }}>
-                MODE: {data?.action_mode || 'REDACT'}
+                MODE: {data?.action_mode || me?.action_mode || 'DEFAULT'}
               </span>
             </div>
             <div style={{ fontSize: '0.78rem', color: C.faint, fontFamily: mono, marginTop: '2px' }}>

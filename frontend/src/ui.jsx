@@ -98,12 +98,14 @@ export function Kpi({ label, value, hint }) {
 }
 
 export function DecisionChip({ decision }) {
+  const dLower = (decision || '').toLowerCase();
   const cfg = {
     allow: { bg: 'rgba(16, 185, 129, 0.12)', border: 'rgba(16, 185, 129, 0.4)', text: '#34d399', glow: 'rgba(16, 185, 129, 0.3)' },
     redact: { bg: 'rgba(245, 158, 11, 0.12)', border: 'rgba(245, 158, 11, 0.4)', text: '#fbbf24', glow: 'rgba(245, 158, 11, 0.3)' },
+    hash: { bg: 'rgba(168, 85, 247, 0.12)', border: 'rgba(168, 85, 247, 0.4)', text: '#c084fc', glow: 'rgba(168, 85, 247, 0.3)' },
     block: { bg: 'rgba(244, 63, 94, 0.14)', border: 'rgba(244, 63, 94, 0.45)', text: '#fb7185', glow: 'rgba(244, 63, 94, 0.35)' },
     deny: { bg: 'rgba(244, 63, 94, 0.14)', border: 'rgba(244, 63, 94, 0.45)', text: '#fb7185', glow: 'rgba(244, 63, 94, 0.35)' },
-  }[decision] || { bg: 'rgba(148, 163, 184, 0.1)', border: 'rgba(148, 163, 184, 0.3)', text: '#94a3b8', glow: 'transparent' };
+  }[dLower] || { bg: 'rgba(148, 163, 184, 0.1)', border: 'rgba(148, 163, 184, 0.3)', text: '#94a3b8', glow: 'transparent' };
 
   return (
     <span style={{
@@ -296,7 +298,7 @@ export function RequestTable({ rows, onOpen, onOpenSession, showUser = false, em
                   </button>
                 </td>
               )}
-              <td style={td}><DecisionChip decision={r.decision} /></td>
+              <td style={td}><DecisionChip decision={r.decision || (r.action_mode === 'HASH' && r.decision !== 'allow' ? 'hash' : r.decision)} /></td>
               <td style={{ ...td, color: '#e2e8f0', fontWeight: 500 }}>{(r.categories_found || []).join(', ') || '—'}</td>
               <td style={td}><Preview text={r.original_prompt || r.original_text} /></td>
               <td style={{ ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
@@ -384,7 +386,7 @@ export function RequestDetail({ eventId, authedFetch, onBack }) {
         </button>
       )}
       <div style={{ display: 'flex', gap: '14px', alignItems: 'center', flexWrap: 'wrap', marginBottom: '14px' }}>
-        <DecisionChip decision={e.decision} />
+        <DecisionChip decision={e.decision || (e.action_mode === 'HASH' && e.decision !== 'allow' ? 'hash' : e.decision)} />
         <span style={{ color: C.muted, fontSize: '0.88rem' }}>{e.created_at ? new Date(e.created_at).toLocaleString() : ''}</span>
         {e.label && <span style={{ fontSize: '0.8rem', fontWeight: 600, padding: '3px 10px', borderRadius: '6px', border: `1px solid ${C.border}`, color: '#e2e8f0' }}>{e.label}</span>}
         {e.agent_name && <span style={{ fontSize: '0.8rem', fontFamily: mono, padding: '3px 10px', borderRadius: '6px', border: `1px solid ${C.border}`, color: C.accent }}>agent: {e.agent_name}</span>}

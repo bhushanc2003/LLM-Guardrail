@@ -335,7 +335,7 @@ async def admin_activity(limit: int = 50, violations_only: bool = False, admin: 
                 "created_at": e.created_at.isoformat() if e.created_at else None,
                 "user_email": u.email,
                 "user_uuid": u.user_uuid,
-                "decision": e.decision,
+                "decision": "hash" if (e.action_mode == "HASH" and e.decision != "allow") else e.decision,
                 "kind": e.kind,
                 "tool_name": e.tool_name,
                 "agent_name": agent_name,
@@ -439,7 +439,7 @@ def _event_label(e, agent, names, seen_prompt) -> str:
 
 
 def _event_row(e, findings, session_ext, agent_name, owner_uuid):
-    decision = e.decision
+    decision = "hash" if (e.action_mode == "HASH" and e.decision != "allow") else e.decision
     cats = sorted({cat for _, cat, _ in findings})
     reason = None
     egress_count = getattr(e, "egress_pii_count", 0) or 0
@@ -452,6 +452,8 @@ def _event_row(e, findings, session_ext, agent_name, owner_uuid):
             reason = "Sent as-is under log-only policy."
     elif decision == "block":
         reason = f"Blocked by policy: {e.pii_count} PII item(s) found in prompt ({', '.join(cats)})."
+    elif decision == "hash":
+        reason = f"Hashed {e.pii_count} PII item(s) in prompt with SHA-256: {', '.join(cats)}."
     elif decision == "redact":
         reason = f"Redacted {e.pii_count} PII item(s) in prompt: {', '.join(cats)}."
     return {
@@ -1008,7 +1010,7 @@ async def get_user_queries(user_uuid: str, limit: int = 50, user: DBUser = Depen
                 "pii_count": event.pii_count,
                 "categories_found": sorted({cat.name for _, cat in findings}),
                 "action_mode": event.action_mode,
-                "decision": event.decision,
+                "decision": "hash" if (event.action_mode == "HASH" and event.decision != "allow") else event.decision,
                 "latency_ms": event.latency_ms,
                 "created_at": event.created_at.isoformat() if event.created_at else None,
                 "pii_items": [
