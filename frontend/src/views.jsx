@@ -1344,8 +1344,8 @@ async function resetRating(authedFetch, user, onDone) {
 
 function CircularScoreRing({
   value,
-  size = 62,
-  strokeWidth = 5.5,
+  size = 80,
+  strokeWidth = 7,
   color = '#00f2fe',
   gradientEnd = null,
   trackColor = 'rgba(255, 255, 255, 0.08)',
@@ -1390,7 +1390,7 @@ function CircularScoreRing({
           strokeLinecap="round"
           style={{
             transition: 'stroke-dashoffset 0.6s ease',
-            filter: glow ? `drop-shadow(0 0 6px ${color}44)` : 'none',
+            filter: glow ? `drop-shadow(0 0 8px ${color}55)` : 'none',
           }}
         />
       </svg>
@@ -1404,7 +1404,7 @@ function CircularScoreRing({
         pointerEvents: 'none',
       }}>
         <span style={{
-          fontSize: size <= 62 ? '0.74rem' : '0.84rem',
+          fontSize: size >= 76 ? '0.94rem' : size <= 62 ? '0.74rem' : '0.84rem',
           fontWeight: 800,
           fontFamily: mono,
           color: color,
@@ -1619,7 +1619,7 @@ export function TrustAnalyticsView({ authedFetch, me, isAdmin, initialUuid }) {
                   </div>
                 </div>
                 {/* Circular Score Gauge */}
-                <CircularScoreRing value={composite} color={trustColor} gradientEnd="#a855f7" size={64} strokeWidth={5.5} />
+                <CircularScoreRing value={composite} color={trustColor} gradientEnd="#a855f7" size={80} strokeWidth={7} />
               </div>
               <div style={{ fontSize: '0.74rem', color: C.faint, marginTop: '4px' }}>
                 Authority-trust {authorityTrust} · violations {violationFreq}% · effective use {effectiveUse == null ? 'n/a' : `${effectiveUse}%`}
@@ -1658,8 +1658,8 @@ export function TrustAnalyticsView({ authedFetch, me, isAdmin, initialUuid }) {
                   value={violationFreq}
                   color={totalViolations > 0 ? '#fb7185' : '#10b981'}
                   gradientEnd={totalViolations > 0 ? '#f43f5e' : '#34d399'}
-                  size={64}
-                  strokeWidth={5.5}
+                  size={80}
+                  strokeWidth={7}
                 />
               </div>
               <div style={{ fontSize: '0.74rem', color: C.faint, marginTop: '4px' }}>
@@ -1700,8 +1700,8 @@ export function TrustAnalyticsView({ authedFetch, me, isAdmin, initialUuid }) {
                   color="#00f2fe"
                   gradientEnd="#10b981"
                   subtext={effectiveUse == null ? 'n/a' : null}
-                  size={64}
-                  strokeWidth={5.5}
+                  size={80}
+                  strokeWidth={7}
                 />
               </div>
               <div style={{ fontSize: '0.74rem', color: C.faint, marginTop: '4px' }}>
@@ -1742,8 +1742,8 @@ export function TrustAnalyticsView({ authedFetch, me, isAdmin, initialUuid }) {
                   color="#38bdf8"
                   gradientEnd="#a855f7"
                   subtext={`${promptPct}%`}
-                  size={64}
-                  strokeWidth={5.5}
+                  size={80}
+                  strokeWidth={7}
                 />
               </div>
               <div style={{ fontSize: '0.74rem', color: C.faint, marginTop: '4px' }}>
