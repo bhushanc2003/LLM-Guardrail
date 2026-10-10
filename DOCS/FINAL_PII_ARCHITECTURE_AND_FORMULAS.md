@@ -20,11 +20,111 @@ GuardIAn implements a **dual-tier, zero-trust governance guardrail** designed to
 
 ## 2. Final PII Detection Architecture Diagram
 
-### Master Architectural Flow (Mermaid)
+> [!TIP]
+> **Native Preview Active:** The diagram below is rendered via high-resolution vector SVG and ASCII formats so it is immediately visible in **any markdown viewer** (VS Code, GitHub, Obsidian).  
+> You can also open the live interactive pan-and-zoom viewer in your browser at: **[http://localhost:8000/architecture](http://localhost:8000/architecture)**.
+
+---
+
+### A. High-Resolution Visual Architecture (SVG)
+
+![GuardIAn Final PII Detection & Agentic Guardrail Architecture](full_architecture_diagram.svg)
+
+---
+
+### B. Comprehensive End-to-End ASCII Blueprint
+
+```text
+┌────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│                              1. CLIENT & AGENTIC SDK INGRESS LAYER                                     │
+│  • Client Web / Mobile UI   • Agentic SDKs (Cline, Cursor, LangChain)   • Enterprise API Gateways      │
+└───────────────────────────────────────────────────┬────────────────────────────────────────────────────┘
+                                                    │ Inbound Request (:8000/proxy/{user_uuid}/v1)
+                                                    ▼
+┌────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│                              2. COMPLIANCE CONTEXT & POLICY ROUTER                                     │
+│  • HIPAA Safe Harbor (18 Categories Active/Inactive)   • Indian DPDP Act 2023 (27 Categories Active)   │
+└───────────────────────────────────────────────────┬────────────────────────────────────────────────────┘
+                                                    │
+                         ┌──────────────────────────┴──────────────────────────┐
+                         │                                                     │
+        [ If Advanced Filtering = OFF ]                       [ If Advanced Filtering = ON ]
+                         │                                                     │
+                         ▼                                                     ▼
+┌───────────────────────────────────────────────┐     ┌──────────────────────────────────────────────────┐
+│        TIER 0: DETERMINISTIC FAST-PATH        │     │         TIER 1: HYBRID NEURAL SLM (GLiNER)       │
+│ ───────────────────────────────────────────── │     │ ──────────────────────────────────────────────── │
+│  • Latency: <0.5 ms                           │     │  • Latency: ~45–50 ms                            │
+│  • Aadhaar (12-digit + Verhoeff Checksum)     │     │  • Model: urchade/gliner_small-v2.1 (152M SLM)   │
+│  • Credit Cards (Visa/MC + Luhn Checksum)     │     │  • Unanchored Names ("Sarah Connor", "Rahul S.") │
+│  • PAN Card (10-char ITD Syntax [A-Z]{5}...)  │     │  • Unanchored Cities ("Kolkata", "Bangalore")    │
+│  • SSN, MRN, Clinical Dates, Health IDs       │     │  • Dynamic Salary & CTC ("INR 24 LPA")           │
+│  • UPI Handles (@okaxis) & Bank Account #     │     │  • Hospital Facilities ("Princeton Hospital")    │
+└───────────────────────┬───────────────────────┘     └────────────────────────┬─────────────────────────┘
+                        │                                                      │
+                        └───────────────────────────┬──────────────────────────┘
+                                                    │
+                                                    ▼
+┌────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│                        3. PRECISION GATE & CONFLICT RESOLUTION ENGINE                                  │
+│  • GENERIC_NOUN_STOP Gate: Drops generic roles ("patient", "attending physician", "taxpayer", "office")│
+│  • Biomedical Whitelist: Preserves clinical pharmacology ("Tamoxifen", "Metoprolol", "Lisinopril")     │
+│  • Span Deduplication: Chronological offset sort; resolves overlapping matches; prevents double-masking│
+└───────────────────────────────────────────────────┬────────────────────────────────────────────────────┘
+                                                    │
+                                                    ▼
+┌────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│                        4. ACTION MODE ENFORCEMENT & PIISessionVault                                    │
+│  • REDACT   ──► Cryptographic Tokenization ([TOKEN_NAME_1], [REDACTED_PAN]) ──► Stored in Vault        │
+│  • BLOCK    ──► Immediate HTTP 400 Compliance Rejection at Edge                                        │
+│  • HASH     ──► Deterministic HMAC-SHA256 Tokenization ([HASH:8a7b9c1d])                               │
+│  • LOG_ONLY ──► Zero-Touch Pass-Through (Emits Tamper-Evident Audit Event)                             │
+└───────────────────────────────────────────────────┬────────────────────────────────────────────────────┘
+                                                    │
+                         ┌──────────────────────────┴──────────────────────────┐
+                         │                                                     │
+                         ▼                                                     ▼
+┌───────────────────────────────────────────────┐     ┌──────────────────────────────────────────────────┐
+│      5A. SINGLE AGENT WORKING MEMORY          │     │        5B. MULTI-AGENT SWARM ORCHESTRATION       │
+│  • ReAct Prompt-Execution Loop                │     │  • Supervisor / Orchestrator Agent Plan          │
+│  • Scratchpad Protected with Sanitized Tokens │     │  • Inter-Agent PII Firewall (Blocks Cross-Leaks) │
+└───────────────────────┬───────────────────────┘     └────────────────────────┬─────────────────────────┘
+                        │                                                      │
+                        └───────────────────────────┬──────────────────────────┘
+                                                    │
+                                                    ▼
+┌────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│                        6. DUAL-SIDED TOOL CALL & SANDBOX GUARDRAIL                                     │
+│  • Pre-Invocation Inspection: Replaces PII in tool arguments before executing DB/API/Python calls       │
+│  • Post-Invocation Scrubbing: Inspects raw tool results before feeding data back into agent context   │
+└───────────────────────────────────────────────────┬────────────────────────────────────────────────────┘
+                                                    │
+                                                    ▼
+┌────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│                        7. TARGET FOUNDATION MODELS & EGRESS GUARDRAIL                                  │
+│  • Upstream Models: OpenAI GPT-4o, Google Gemini 2.0, Anthropic Claude 3.5, Local Ollama              │
+│  • Egress Inspector: Scans for Hallucinated PII & Reverse Prompt Injection Leaks                       │
+│  • Vault Reconstitution: Injects real names for authorized clients; delivers scrubbed text otherwise   │
+└───────────────────────────────────────────────────┬────────────────────────────────────────────────────┘
+                                                    │
+                                                    ▼
+┌────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│                        8. CONTINUOUS GOVERNANCE & TRUST SCORING ENGINE                                 │
+│  • Authority-Trust Score: Exponential streak growth (+20 max) − Severity Penalties (-25, -15, -8, -3)  │
+│  • Effective-Use Ratio: Clean Requests / Total Requests × 100%                                         │
+│  • Audit Storage: PostgreSQL / SQLite tamper-evident SHA-256 event log & real-time dashboard analytics │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+### C. Expandable Mermaid Diagram Source
+
+<details>
+<summary>▶ Click here to expand Mermaid Source Code</summary>
 
 ```mermaid
 flowchart TD
-    %% Styling
     classDef client fill:#090d1a,stroke:#00f2fe,stroke-width:2px,color:#f8fafc;
     classDef gateway fill:#0c1327,stroke:#38bdf8,stroke-width:2px,color:#f8fafc;
     classDef guardrail fill:#151030,stroke:#a855f7,stroke-width:2px,color:#f8fafc;
@@ -125,6 +225,8 @@ flowchart TD
         METRICS_ENGINE --> DASHBOARD["Live Security Dashboard\n(Overview, Activity, Trust & Tokens)"]:::client
     end
 ```
+
+</details>
 
 ---
 
