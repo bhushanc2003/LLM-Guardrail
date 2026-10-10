@@ -199,7 +199,7 @@ async def get_me(user: DBUser = Depends(get_current_user)):
         "action_mode": user.action_mode,
         "hipaa_enabled": user.hipaa_enabled if user.hipaa_enabled is not None else True,
         "dpdp_enabled": user.dpdp_enabled if user.dpdp_enabled is not None else True,
-        "advanced_filtering": getattr(user, "advanced_filtering", False) if getattr(user, "advanced_filtering", False) is not None else False,
+        "advanced_filtering": getattr(user, "advanced_filtering", True) if getattr(user, "advanced_filtering", None) is not None else True,
     }
 
 def _sessions_summary(db, user_uuid: Optional[str] = None, limit: int = 50) -> List[Dict[str, Any]]:
@@ -463,7 +463,7 @@ async def get_user_compliance(user_uuid: str, user: DBUser = Depends(get_current
             "user_uuid": user_uuid,
             "hipaa_enabled": target.hipaa_enabled if target.hipaa_enabled is not None else True,
             "dpdp_enabled": target.dpdp_enabled if target.dpdp_enabled is not None else True,
-            "advanced_filtering": getattr(target, "advanced_filtering", False) if getattr(target, "advanced_filtering", False) is not None else False,
+            "advanced_filtering": getattr(target, "advanced_filtering", True) if getattr(target, "advanced_filtering", None) is not None else True,
         }
     finally:
         db.close()
@@ -488,7 +488,7 @@ async def set_user_compliance(user_uuid: str, req: UserComplianceRequest, user: 
             "user_uuid": user_uuid,
             "hipaa_enabled": target.hipaa_enabled if target.hipaa_enabled is not None else True,
             "dpdp_enabled": target.dpdp_enabled if target.dpdp_enabled is not None else True,
-            "advanced_filtering": getattr(target, "advanced_filtering", False) if getattr(target, "advanced_filtering", False) is not None else False,
+            "advanced_filtering": getattr(target, "advanced_filtering", True) if getattr(target, "advanced_filtering", None) is not None else True,
         }
     finally:
         db.close()
@@ -1274,7 +1274,7 @@ async def test_inspect(req: TestInspectRequest, request: Request, user: DBUser =
     mode = req.mode if (req.mode and req.mode != "DEFAULT") else _action_mode_for(request, user.user_uuid)
     check_hipaa = req.check_hipaa if req.check_hipaa is not None else (user.hipaa_enabled if user.hipaa_enabled is not None else True)
     check_dpdp = req.check_dpdp if req.check_dpdp is not None else (user.dpdp_enabled if user.dpdp_enabled is not None else True)
-    use_gliner = req.advanced_filtering if req.advanced_filtering is not None else (getattr(user, "advanced_filtering", False) or False)
+    use_gliner = req.advanced_filtering if req.advanced_filtering is not None else (getattr(user, "advanced_filtering", True) if getattr(user, "advanced_filtering", None) is not None else True)
 
     is_egress = (req.direction or "").lower() == "egress"
     try:
@@ -1518,7 +1518,7 @@ async def chat_completions(request: Request, user_uuid: Optional[str] = "default
     db = SessionLocal()
     check_hipaa = True
     check_dpdp = True
-    use_gliner = False
+    use_gliner = True
     try:
         user_record = db.query(DBUser).filter(DBUser.user_uuid == user_uuid).first()
         if user_record:
@@ -1555,7 +1555,7 @@ async def chat_completions(request: Request, user_uuid: Optional[str] = "default
             if isinstance(messages[idx], dict) and messages[idx].get("role") == "user":
                 latest_user_msg = str(messages[idx].get("content", ""))
                 break
-        blocked_matches = detector.detect(latest_user_msg, check_hipaa=check_hipaa, check_dpdp=check_dpdp) if latest_user_msg else []
+        blocked_matches = detector.detect(latest_user_msg, check_hipaa=check_hipaa, check_dpdp=check_dpdp, use_gliner=use_gliner) if latest_user_msg else []
         blocked_event_id = audit_logger.log_event(
             identity=identity_from_request(request, user_uuid, req_body.get("messages")),
             user_id=user_id,
@@ -1839,6 +1839,7 @@ async def text_completions(request: Request, user_uuid: Optional[str] = "default
     db = SessionLocal()
     check_hipaa = True
     check_dpdp = True
+    use_gliner = True
     try:
         user_record = db.query(DBUser).filter(DBUser.user_uuid == user_uuid).first()
         if user_record:
@@ -1846,6 +1847,8 @@ async def text_completions(request: Request, user_uuid: Optional[str] = "default
                 check_hipaa = user_record.hipaa_enabled
             if user_record.dpdp_enabled is not None:
                 check_dpdp = user_record.dpdp_enabled
+            if hasattr(user_record, "advanced_filtering") and user_record.advanced_filtering is not None:
+                use_gliner = user_record.advanced_filtering
     finally:
         db.close()
 
@@ -1853,20 +1856,22 @@ async def text_completions(request: Request, user_uuid: Optional[str] = "default
         check_hipaa = request.headers.get("X-Check-HIPAA", "").lower() in ("true", "1", "yes")
     if "X-Check-DPDP" in request.headers:
         check_dpdp = request.headers.get("X-Check-DPDP", "").lower() in ("true", "1", "yes")
+    if "X-Advanced-Filtering" in request.headers:
+        use_gliner = request.headers.get("X-Advanced-Filtering", "").lower() in ("true", "1", "yes")
 
     prompt = req_body.get("prompt", "")
     vault = PIISessionVault()
     all_matches = []
 
     if isinstance(prompt, str) and prompt:
-        anon_prompt, matches = anonymizer.process_text(prompt, vault, mode=action_mode, check_hipaa=check_hipaa, check_dpdp=check_dpdp)
+        anon_prompt, matches = anonymizer.process_text(prompt, vault, mode=action_mode, check_hipaa=check_hipaa, check_dpdp=check_dpdp, use_gliner=use_gliner)
         req_body["prompt"] = anon_prompt
         all_matches = matches
     elif isinstance(prompt, list):
         anon_prompts = []
         for p in prompt:
             if isinstance(p, str):
-                ap, m = anonymizer.process_text(p, vault, mode=action_mode, check_hipaa=check_hipaa, check_dpdp=check_dpdp)
+                ap, m = anonymizer.process_text(p, vault, mode=action_mode, check_hipaa=check_hipaa, check_dpdp=check_dpdp, use_gliner=use_gliner)
                 anon_prompts.append(ap)
                 all_matches.extend(m)
             else:

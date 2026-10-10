@@ -51,7 +51,7 @@ BLOCK_MESSAGE = "[BLOCKED by governance: contains protected identifiers (HIPAA/D
 # memory and refreshed in the background, so a hook never waits on the database for this.
 # ANONYMIZE behaves as REDACT here: restoring real values would defeat the leak checks.
 _USER_MODES: Dict[str, str] = {}
-_USER_FRAMEWORKS: Dict[str, tuple] = {}   # user_uuid -> (hipaa_enabled, dpdp_enabled, advanced_filtering); dashboard toggles, default (on, on, off)
+_USER_FRAMEWORKS: Dict[str, tuple] = {}   # user_uuid -> (hipaa_enabled, dpdp_enabled, advanced_filtering); dashboard toggles, default (on, on, on)
 
 
 SERVERLESS = bool(os.getenv("VERCEL"))   # no background threads there: the instance freezes after each response
@@ -68,7 +68,7 @@ def _refresh_user_modes_once() -> None:
             _USER_MODES.clear()
             _USER_MODES.update({u: (m or "").upper() for u, m, _, _, _ in rows if m})
             _USER_FRAMEWORKS.clear()
-            _USER_FRAMEWORKS.update({u: (h is not False, d is not False, bool(a)) for u, _, h, d, a in rows if h is False or d is False or a})
+            _USER_FRAMEWORKS.update({u: (h is not False, d is not False, a is not False) for u, _, h, d, a in rows})
         finally:
             db.close()
     except Exception as e:
@@ -90,7 +90,7 @@ def _refresh_user_modes() -> None:
                 _USER_MODES.clear()
                 _USER_MODES.update({u: (m or "").upper() for u, m, _, _, _ in rows if m})
                 _USER_FRAMEWORKS.clear()
-                _USER_FRAMEWORKS.update({u: (h is not False, d is not False, bool(a)) for u, _, h, d, a in rows if h is False or d is False or a})
+                _USER_FRAMEWORKS.update({u: (h is not False, d is not False, a is not False) for u, _, h, d, a in rows})
             finally:
                 db.close()
         except Exception as e:
@@ -99,9 +99,9 @@ def _refresh_user_modes() -> None:
 
 
 def _frameworks_for(user_id: str) -> tuple:
-    """(check_hipaa, check_dpdp, use_gliner) from the user's dashboard toggles; packs on and neural filtering off unless changed."""
+    """(check_hipaa, check_dpdp, use_gliner) from the user's dashboard toggles; packs on and neural filtering on unless changed."""
     _maybe_refresh()
-    return _USER_FRAMEWORKS.get(user_id, (True, True, False))
+    return _USER_FRAMEWORKS.get(user_id, (True, True, True))
 
 
 def _mode_for(user_id: str) -> str:

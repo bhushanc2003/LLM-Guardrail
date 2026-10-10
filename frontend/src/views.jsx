@@ -1135,7 +1135,7 @@ export function OverviewUser({ authedFetch, me, onOpenEvent }) {
   const [mode, setMode] = useState(me.action_mode || '');
   const [hipaa, setHipaa] = useState(me.hipaa_enabled !== false);
   const [dpdp, setDpdp] = useState(me.dpdp_enabled !== false);
-  const [advancedFilter, setAdvancedFilter] = useState(me.advanced_filtering === true);
+  const [advancedFilter, setAdvancedFilter] = useState(me.advanced_filtering !== false);
   const [saved, setSaved] = useState('');
   const [compSaved, setCompSaved] = useState('');
   const [activeModal, setActiveModal] = useState(null);
@@ -1151,9 +1151,9 @@ export function OverviewUser({ authedFetch, me, onOpenEvent }) {
       if (r.ok) {
         const data = await r.json();
         setMode(data.action_mode || '');
-        if (data.hipaa_enabled !== undefined) setHipaa(data.hipaa_enabled);
-        if (data.dpdp_enabled !== undefined) setDpdp(data.dpdp_enabled);
-        if (data.advanced_filtering !== undefined) setAdvancedFilter(data.advanced_filtering);
+        if (data.hipaa_enabled !== undefined) setHipaa(data.hipaa_enabled !== false);
+        if (data.dpdp_enabled !== undefined) setDpdp(data.dpdp_enabled !== false);
+        if (data.advanced_filtering !== undefined) setAdvancedFilter(data.advanced_filtering !== false);
       }
     };
     syncMode();
